@@ -1,0 +1,9 @@
+dist
+node_modules
+coverage
+pnpm-lock.yaml
+generated
+
+# Contract documents authored by the user; not reformatted by tooling.
+ARCHITECTURE.md
+PHASE.md

@@ -1,0 +1,8 @@
+{
+  "name": "@tasks-platform/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Consumidor de la cola. Sin logica aun: se implementa en una fase posterior.",
+  "scripts": {}
+}
