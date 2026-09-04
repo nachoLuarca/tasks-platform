@@ -10,5 +10,64 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// No domain models yet. This phase only sets up the connection and the
-// migration pipeline; domain modeling belongs to a later phase.
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  name            String
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+}
+
+model Organization {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  memberships Membership[]
+}
+
+model Membership {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  joinedAt       DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+// Rotation chain: each use of a token revokes it and issues a new one in the
+// same family (replacedById -> the token that replaced this one). Presenting
+// an already-revoked token means it was stolen: the whole family gets
+// revoked. See docs/adr/0003-refresh-token-rotation.md.
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  tokenHash    String    @unique
+  familyId     String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @unique
+  createdAt    DateTime  @default(now())
+  userAgent    String?
+  ipAddress    String?
+
+  user         User          @relation(fields: [userId], references: [id])
+  replacedBy   RefreshToken? @relation("TokenChain", fields: [replacedById], references: [id])
+  replacedFrom RefreshToken? @relation("TokenChain")
+
+  @@index([familyId])
+  @@index([userId])
+}

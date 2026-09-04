@@ -76,3 +76,17 @@ export class ConflictError extends AppError {
     });
   }
 }
+
+export class TooManyRequestsError extends AppError {
+  public readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number, detail?: string) {
+    super({
+      status: 429,
+      type: 'https://tasks-platform.dev/errors/too-many-requests',
+      title: 'Too Many Requests',
+      detail,
+    });
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}

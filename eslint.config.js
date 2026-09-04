@@ -30,5 +30,15 @@ export default tseslint.config(
     files: ['**/*.js', '**/*.config.ts'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // supertest's `response.body` is untyped JSON; asserting on it directly
+    // is the point of an integration test, not a type-safety gap to fix.
+    files: ['**/test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+    },
+  },
   eslintConfigPrettier,
 );

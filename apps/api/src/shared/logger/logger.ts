@@ -12,7 +12,17 @@ export const logger = pino({
     return requestId ? { requestId } : {};
   },
   redact: {
-    paths: ['req.headers.authorization', 'req.headers.cookie', 'req.body', '*.password', '*.token'],
+    paths: [
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'res.headers["set-cookie"]',
+      'req.body',
+      '*.password',
+      '*.token',
+      '*.accessToken',
+      '*.refreshToken',
+      '*.passwordHash',
+    ],
     remove: true,
   },
   transport: config.isDevelopment

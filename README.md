@@ -6,11 +6,13 @@ API keys y webhooks salientes. El protagonista del proyecto es la API; el
 cliente frontend incluido (`apps/web`, en fases posteriores) es solo un
 cliente de demostracion.
 
-Esta fase (`0 — Cimientos`) deja el esqueleto del proyecto funcionando de
-punta a punta, sin ninguna logica de dominio: configuracion, logging, manejo
-de errores, health checks, base de datos y contenedores. El detalle de alcance
-de esta fase esta en [`PHASE.md`](./PHASE.md); las decisiones de arquitectura
-y las convenciones del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+La Fase 0 (`v0.1.0`) dejo el esqueleto del proyecto funcionando de punta a
+punta, sin logica de dominio. La Fase 1 (`Identidad`, en curso) agrega
+usuarios, organizaciones y el ciclo completo de autenticacion: registro,
+login, renovacion de sesion con rotacion de refresh token, cierre de sesion y
+gestion basica de perfil. El detalle de alcance de la fase actual esta en
+[`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las convenciones
+del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Requisitos previos
 
@@ -48,6 +50,59 @@ migraciones:
 
 ```bash
 pnpm db:migrate
+```
+
+## Endpoints disponibles
+
+Todas las rutas de la API llevan el prefijo `/v1`.
+
+| Metodo y ruta                | Requiere auth | Que hace                                                    |
+| ---------------------------- | :-----------: | ----------------------------------------------------------- |
+| `POST /v1/auth/register`     |       -       | Crea usuario, organizacion personal y sesion                |
+| `POST /v1/auth/login`        |       -       | Inicia sesion                                               |
+| `POST /v1/auth/refresh`      |       -       | Renueva el access token, rota el refresh token              |
+| `POST /v1/auth/logout`       |       -       | Cierra la sesion actual                                     |
+| `POST /v1/auth/logout-all`   |       ✓       | Cierra todas las sesiones del usuario                       |
+| `GET /v1/auth/me`            |       ✓       | Perfil del usuario autenticado                              |
+| `PATCH /v1/users/me`         |       ✓       | Actualiza el nombre                                         |
+| `POST /v1/users/me/password` |       ✓       | Cambia la contraseña; revoca las demas sesiones             |
+| `POST /v1/organizations`     |       ✓       | Crea una organizacion adicional                             |
+| `GET /v1/organizations`      |       ✓       | Lista las organizaciones del usuario                        |
+| `GET /v1/organizations/:id`  |       ✓       | Una organizacion, solo si el usuario es miembro (404 si no) |
+
+Las rutas marcadas con auth requieren el header `Authorization: Bearer <access_token>`.
+El refresh token nunca aparece en el cuerpo de una respuesta: viaja unicamente
+en una cookie `httpOnly` (`refresh_token`), que el navegador o `curl -c/-b`
+manejan automaticamente.
+
+### Recorrido completo con curl
+
+```bash
+# 1. Registrarse (guarda la cookie del refresh token en cookies.txt)
+curl -i -c cookies.txt -X POST http://localhost:3000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ada@example.com","password":"correct-horse-battery","name":"Ada"}'
+# La respuesta trae { "user": {...}, "accessToken": "...", "expiresInSeconds": 900 }
+
+ACCESS_TOKEN="<pegar el accessToken de la respuesta anterior>"
+
+# 2. Perfil propio
+curl http://localhost:3000/v1/auth/me -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# 3. Renovar la sesion (rota el refresh token; guarda el nuevo en cookies.txt)
+curl -i -b cookies.txt -c cookies.txt -X POST http://localhost:3000/v1/auth/refresh
+# La respuesta trae un accessToken nuevo
+
+NEW_ACCESS_TOKEN="<pegar el accessToken de la respuesta anterior>"
+
+# 4. Volver a pedir el perfil, ahora con el token nuevo
+curl http://localhost:3000/v1/auth/me -H "Authorization: Bearer $NEW_ACCESS_TOKEN"
+
+# 5. Cerrar sesion
+curl -i -b cookies.txt -X POST http://localhost:3000/v1/auth/logout
+
+# 6. El refresh token ya cerrado no sirve mas (debe responder 401)
+curl -i -b cookies.txt -X POST http://localhost:3000/v1/auth/refresh
 ```
 
 ## Desarrollo fuera de Docker
@@ -93,17 +148,25 @@ Estructura interna de `apps/api/src`:
 ```
 src/
   modules/
+    auth/                   Registro, login, refresh, logout, requireAuth
+    users/                  Perfil y cambio de contraseña
+    organizations/          Organizaciones y membresia
+    health/                 Health checks
     <dominio>/
       <dominio>.routes.ts       Definicion de rutas
       <dominio>.controller.ts   Traduccion HTTP <-> DTO
       <dominio>.service.ts      Reglas de negocio
       <dominio>.repository.ts   Acceso a datos (unico lugar que toca Prisma)
+      <dominio>.mapper.ts       Entidad -> DTO de respuesta
   shared/
     config/                 Configuracion tipada y validada al arranque
     db/                     Clientes de Postgres (Prisma) y Redis
     errors/                 Jerarquia de errores y middleware de errores
-    http/                   Middlewares transversales (request id, logging)
+    http/                   Middlewares transversales (request id, logging,
+                             limite de intentos, validacion de body)
     logger/                 Logger y contexto de peticion
+    security/               Hashing de contraseñas (Argon2id) y tokens (JWT
+                             + refresh token opaco)
   app.ts                    Construccion de la aplicacion Express
   server.ts                 Arranque del proceso y apagado ordenado
 ```
