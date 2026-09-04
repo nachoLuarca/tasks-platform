@@ -37,6 +37,20 @@ function loadConfig() {
     redis: Object.freeze({
       url: env.REDIS_URL,
     }),
+    auth: Object.freeze({
+      jwtSecret: env.JWT_SECRET,
+      cookieSameSite: env.COOKIE_SAME_SITE,
+    }),
+    argon2: Object.freeze({
+      memoryCostKib: env.ARGON2_MEMORY_COST_KIB,
+      timeCost: env.ARGON2_TIME_COST,
+      parallelism: env.ARGON2_PARALLELISM,
+    }),
+    rateLimit: Object.freeze({
+      enabled: env.RATE_LIMIT_ENABLED,
+      windowMs: env.RATE_LIMIT_WINDOW_MS,
+      maxAttempts: env.RATE_LIMIT_MAX_ATTEMPTS,
+    }),
   });
 }
 

@@ -20,11 +20,13 @@
   "dependencies": {
     "@prisma/client": "^6.1.0",
     "@tasks-platform/contracts": "workspace:*",
+    "argon2": "^0.41.1",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "express": "^5.0.1",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.1",
+    "jose": "^5.9.6",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "zod": "^3.24.1"
