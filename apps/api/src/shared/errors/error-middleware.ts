@@ -1,7 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 
 import { getRequestId, logger } from '../logger/index.js';
-import { AppError, NotFoundError, ValidationError } from './app-error.js';
+import { AppError, NotFoundError, TooManyRequestsError, ValidationError } from './app-error.js';
 
 interface ProblemDetails {
   type: string;
@@ -48,6 +48,10 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
       { err: { name: (error as Error).name, message: (error as Error).message } },
       'Request failed',
     );
+  }
+
+  if (error instanceof TooManyRequestsError) {
+    res.setHeader('Retry-After', String(error.retryAfterSeconds));
   }
 
   res.status(problem.status).contentType('application/problem+json').send(problem);
