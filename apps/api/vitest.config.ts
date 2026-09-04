@@ -6,5 +6,9 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     globals: false,
     setupFiles: ['./test/setup-env.ts'],
+    // Integration tests share one real Postgres database and reset it
+    // between cases; running test files in parallel would let them stomp on
+    // each other's data.
+    fileParallelism: false,
   },
 });

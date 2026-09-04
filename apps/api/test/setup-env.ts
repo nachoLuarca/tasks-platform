@@ -10,8 +10,8 @@ const envPath = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../.
 // Set before loading .env: Node's loadEnvFile, like dotenv, never overrides
 // a variable that is already present in process.env.
 process.env.RATE_LIMIT_ENABLED ??= 'false';
-process.env.ARGON2_MEMORY_COST_KIB ??= '8';
-process.env.ARGON2_TIME_COST ??= '1';
+process.env.ARGON2_MEMORY_COST_KIB ??= '1024';
+process.env.ARGON2_TIME_COST ??= '2';
 process.env.ARGON2_PARALLELISM ??= '1';
 
 if (existsSync(envPath)) {
