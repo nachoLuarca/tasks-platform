@@ -9,6 +9,7 @@
   },
   "packageManager": "pnpm@11.25.0",
   "scripts": {
+    "postinstall": "pnpm --filter @tasks-platform/contracts build && pnpm --filter @tasks-platform/api exec prisma generate",
     "dev": "pnpm --filter @tasks-platform/contracts run build && pnpm --filter @tasks-platform/api run dev",
     "build": "pnpm --filter @tasks-platform/contracts run build && pnpm -r --if-present run build",
     "test": "pnpm -r --if-present run test",
