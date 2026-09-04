@@ -3,7 +3,10 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 
+import { authRouter } from './modules/auth/auth.routes.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { organizationsRouter } from './modules/organizations/organizations.routes.js';
+import { usersRouter } from './modules/users/users.routes.js';
 import { config } from './shared/config/index.js';
 import { errorHandler, notFoundHandler } from './shared/errors/index.js';
 import { requestIdMiddleware, requestLoggerMiddleware } from './shared/http/index.js';
@@ -23,11 +26,14 @@ export function buildApp(): Express {
   app.use(requestIdMiddleware);
   app.use(requestLoggerMiddleware);
   app.use(helmet());
-  app.use(cors({ origin: resolveCorsOrigin() }));
+  app.use(cors({ origin: resolveCorsOrigin(), credentials: true }));
   app.use(compression());
   app.use(express.json({ limit: config.bodyLimit }));
 
   app.use('/health', healthRouter);
+  app.use('/v1/auth', authRouter);
+  app.use('/v1/users', usersRouter);
+  app.use('/v1/organizations', organizationsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
