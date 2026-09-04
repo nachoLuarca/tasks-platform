@@ -11,9 +11,6 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
       REDIS_URL: redis://redis:6379
-      # Bind-mounted source on Windows/macOS doesn't emit native fs events
-      # reliably inside the container, so the watcher falls back to polling.
-      CHOKIDAR_USEPOLLING: 'true'
     ports:
       - '${PORT:-3000}:3000'
     volumes:
