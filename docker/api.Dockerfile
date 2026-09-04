@@ -13,21 +13,29 @@ COPY apps/worker/package.json apps/worker/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 
 # Full install (incl. devDependencies, needed for the Prisma CLI and the
-# TypeScript build), reused by dev and build stages.
+# TypeScript build), reused by dev and build stages. --ignore-scripts skips
+# the root `postinstall` (builds packages/contracts, runs `prisma generate`),
+# which would fail here: only package.json files are copied at this point,
+# not the source it needs. It also skips dependency lifecycle scripts, most
+# notably @prisma/engines' postinstall (downloads the query engine binaries)
+# and argon2's (builds its native addon) -- both re-enabled explicitly below,
+# in the stages where the source tree is present.
 FROM base AS deps
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # Development image: runs the TypeScript source directly with hot reload.
 FROM deps AS dev
 COPY . .
+RUN pnpm rebuild
 RUN pnpm --filter @tasks-platform/api exec prisma generate --schema prisma/schema.prisma
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@tasks-platform/api", "run", "dev"]
+CMD ["pnpm", "run", "dev"]
 
 # Compiles contracts and the API to plain JS, with the Prisma client
 # generated in the same node_modules tree that ships to runtime.
 FROM deps AS build
 COPY . .
+RUN pnpm rebuild
 RUN pnpm --filter @tasks-platform/api exec prisma generate --schema prisma/schema.prisma
 RUN pnpm --filter @tasks-platform/contracts run build
 RUN pnpm --filter @tasks-platform/api run build
