@@ -1,3 +1,0 @@
--- Initial migration. No domain models yet: this phase only wires up the
--- Prisma + PostgreSQL connection and the migration pipeline. Real tables
--- are introduced in a later phase.
