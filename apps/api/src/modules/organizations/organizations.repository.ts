@@ -1,5 +1,5 @@
 import { prisma, type DbClient } from '../../shared/db/index.js';
-import type { CreateOrganizationInput, OrganizationEntity } from './organizations.types.js';
+import type { CreateOrganizationInput, OrganizationEntity, UpdateOrganizationInput } from './organizations.types.js';
 
 function toEntity(row: {
   id: string;
@@ -30,23 +30,17 @@ export const organizationsRepository = {
     return row ? toEntity(row) : null;
   },
 
-  async addMember(
-    userId: string,
-    organizationId: string,
+  async update(
+    id: string,
+    input: UpdateOrganizationInput,
     client: DbClient = prisma,
-  ): Promise<void> {
-    await client.membership.create({ data: { userId, organizationId } });
+  ): Promise<OrganizationEntity> {
+    const row = await client.organization.update({ where: { id }, data: input });
+    return toEntity(row);
   },
 
-  async isMember(
-    userId: string,
-    organizationId: string,
-    client: DbClient = prisma,
-  ): Promise<boolean> {
-    const membership = await client.membership.findUnique({
-      where: { userId_organizationId: { userId, organizationId } },
-    });
-    return membership !== null;
+  async softDelete(id: string, client: DbClient = prisma): Promise<void> {
+    await client.organization.update({ where: { id }, data: { deletedAt: new Date() } });
   },
 
   async listForUser(userId: string, client: DbClient = prisma): Promise<OrganizationEntity[]> {

@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 
-import type { CreateOrganizationRequest } from '@tasks-platform/contracts';
+import type { CreateOrganizationRequest, UpdateOrganizationRequest } from '@tasks-platform/contracts';
 
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { toOrganizationResponse } from './organizations.mapper.js';
@@ -28,8 +28,18 @@ export const organizationsController = {
   }) satisfies RequestHandler,
 
   getById: (async (req, res) => {
-    const userId = getAuthenticatedUserId(req);
-    const organization = await organizationsService.getForMember(userId, req.params.id as string);
+    const organization = await organizationsService.getById(req.params.organizationId as string);
     res.status(200).json(toOrganizationResponse(organization));
+  }) satisfies RequestHandler,
+
+  update: (async (req, res) => {
+    const body = req.body as UpdateOrganizationRequest;
+    const organization = await organizationsService.update(req.params.organizationId as string, body.name);
+    res.status(200).json(toOrganizationResponse(organization));
+  }) satisfies RequestHandler,
+
+  remove: (async (req, res) => {
+    await organizationsService.remove(req.params.organizationId as string);
+    res.status(204).send();
   }) satisfies RequestHandler,
 };
