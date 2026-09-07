@@ -20,8 +20,9 @@ model User {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  memberships   Membership[]
-  refreshTokens RefreshToken[]
+  memberships     Membership[]
+  refreshTokens   RefreshToken[]
+  invitationsSent Invitation[]
 }
 
 model Organization {
@@ -33,12 +34,21 @@ model Organization {
   deletedAt DateTime?
 
   memberships Membership[]
+  invitations Invitation[]
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
 }
 
 model Membership {
   id             String   @id @default(uuid())
   userId         String
   organizationId String
+  role           Role     @default(MEMBER)
   joinedAt       DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id])
@@ -46,6 +56,30 @@ model Membership {
 
   @@unique([userId, organizationId])
   @@index([organizationId])
+}
+
+// The token itself is never stored, only its SHA-256 hash (same pattern as
+// RefreshToken). "Pending" means acceptedAt IS NULL AND revokedAt IS NULL.
+// Prisma's schema language has no partial-index syntax, so the unique index
+// that enforces "at most one pending invitation per (organizationId, email)"
+// is added by hand in the migration SQL and isn't representable here -- see
+// migration 20260907000000_add_roles_and_invitations.
+model Invitation {
+  id             String    @id @default(uuid())
+  organizationId String
+  email          String
+  role           Role
+  tokenHash      String    @unique
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  invitedBy    User         @relation(fields: [invitedById], references: [id])
+
+  @@index([organizationId, email])
 }
 
 // Rotation chain: each use of a token revokes it and issues a new one in the
