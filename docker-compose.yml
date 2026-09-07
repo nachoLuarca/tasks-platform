@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
       target: dev
+    user: "1000:1000"
     env_file:
       - .env
     environment:
