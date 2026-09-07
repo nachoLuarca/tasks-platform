@@ -9,12 +9,14 @@ cliente frontend incluido (`apps/web`, en fases posteriores) es solo un
 cliente de demostracion.
 
 La Fase 0 (`v0.1.0`) dejo el esqueleto del proyecto funcionando de punta a
-punta, sin logica de dominio. La Fase 1 (`Identidad`, en curso) agrega
-usuarios, organizaciones y el ciclo completo de autenticacion: registro,
-login, renovacion de sesion con rotacion de refresh token, cierre de sesion y
-gestion basica de perfil. El detalle de alcance de la fase actual esta en
-[`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las convenciones
-del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+punta, sin logica de dominio. La Fase 1 (`v0.2.0`) agrego usuarios,
+organizaciones y el ciclo completo de autenticacion: registro, login,
+renovacion de sesion con rotacion de refresh token, cierre de sesion y
+gestion basica de perfil. La Fase 2 (en curso) agrega roles con permisos
+granulares, gestion de miembros e invitaciones, para que una organizacion
+deje de ser de una sola persona. El detalle de alcance de la fase actual esta
+en [`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las
+convenciones del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Requisitos previos
 
@@ -70,7 +72,48 @@ Todas las rutas de la API llevan el prefijo `/v1`.
 | `POST /v1/users/me/password` |       ✓       | Cambia la contraseña; revoca las demas sesiones             |
 | `POST /v1/organizations`     |       ✓       | Crea una organizacion adicional                             |
 | `GET /v1/organizations`      |       ✓       | Lista las organizaciones del usuario                        |
-| `GET /v1/organizations/:id`  |       ✓       | Una organizacion, solo si el usuario es miembro (404 si no) |
+| `GET /v1/organizations/:organizationId` | ✓ | Una organizacion, solo si el usuario es miembro (404 si no) |
+| `PATCH /v1/organizations/:organizationId` | ✓ | Edita la organizacion (`organization:update`) |
+| `DELETE /v1/organizations/:organizationId` | ✓ | Elimina la organizacion (solo `OWNER`) |
+| `POST /v1/organizations/:organizationId/transfer-ownership` | ✓ | Transfiere la propiedad (solo `OWNER`) |
+| `GET /v1/organizations/:organizationId/members` | ✓ | Lista los miembros |
+| `PATCH /v1/organizations/:organizationId/members/:userId` | ✓ | Cambia el rol de un miembro (`member:update-role`) |
+| `DELETE /v1/organizations/:organizationId/members/:userId` | ✓ | Expulsa a un miembro (`member:remove`) |
+| `DELETE /v1/organizations/:organizationId/members/me` | ✓ | Abandona la organizacion |
+| `POST /v1/organizations/:organizationId/invitations` | ✓ | Crea una invitacion (`invitation:create`) |
+| `GET /v1/organizations/:organizationId/invitations` | ✓ | Lista las invitaciones pendientes |
+| `DELETE /v1/organizations/:organizationId/invitations/:id` | ✓ | Revoca una invitacion |
+| `GET /v1/invitations/:token` | - | Vista previa publica: organizacion, quien invita y el rol ofrecido |
+| `POST /v1/invitations/:token/accept` | ✓ | Acepta la invitacion (el correo de la cuenta debe coincidir con el invitado) |
+
+A un usuario que no es miembro de la organizacion, todas las rutas bajo
+`/v1/organizations/:organizationId` le responden 404 (nunca 403): no se
+revela si la organizacion existe.
+
+### Roles y permisos
+
+Cuatro roles fijos, no configurables. La matriz completa vive en
+[`apps/api/src/shared/authorization/permissions.ts`](./apps/api/src/shared/authorization/permissions.ts)
+y se explica en
+[`docs/adr/0005-permission-matrix.md`](./docs/adr/0005-permission-matrix.md).
+
+| Permiso                | OWNER | ADMIN | MEMBER | VIEWER |
+| ----------------------- | :---: | :---: | :----: | :----: |
+| `organization:update`   |   ✓   |   ✓   |        |        |
+| `organization:delete`   |   ✓   |       |        |        |
+| `member:list`           |   ✓   |   ✓   |   ✓    |   ✓    |
+| `member:update-role`    |   ✓   |   ✓   |        |        |
+| `member:remove`         |   ✓   |   ✓   |        |        |
+| `member:leave`          |   ✓   |   ✓   |   ✓    |   ✓    |
+| `ownership:transfer`    |   ✓   |       |        |        |
+| `invitation:create`     |   ✓   |   ✓   |        |        |
+| `invitation:list`       |   ✓   |   ✓   |        |        |
+| `invitation:revoke`     |   ✓   |   ✓   |        |        |
+
+Ademas de la matriz, un puñado de invariantes de estado se aplican siempre,
+sin excepcion de rol: siempre existe exactamente un `OWNER`; no se lo puede
+degradar ni expulsar; no puede abandonar la organizacion sin transferir la
+propiedad antes; y ni siquiera un `ADMIN` puede modificarlo o expulsarlo.
 
 Las rutas marcadas con auth requieren el header `Authorization: Bearer <access_token>`.
 El refresh token nunca aparece en el cuerpo de una respuesta: viaja unicamente
@@ -105,6 +148,52 @@ curl -i -b cookies.txt -X POST http://localhost:3000/v1/auth/logout
 
 # 6. El refresh token ya cerrado no sirve mas (debe responder 401)
 curl -i -b cookies.txt -X POST http://localhost:3000/v1/auth/refresh
+```
+
+### Recorrido de roles e invitaciones
+
+```bash
+# 1. La owner ya tiene su organizacion personal (creada en el registro)
+curl -c owner.txt -X POST http://localhost:3000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@example.com","password":"correct-horse-battery","name":"Owner"}'
+OWNER_TOKEN="<accessToken de la respuesta>"
+
+curl http://localhost:3000/v1/organizations -H "Authorization: Bearer $OWNER_TOKEN"
+ORG_ID="<id de la organizacion listada>"
+
+# 2. Invitar a un segundo usuario como MEMBER
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/invitations \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"email":"member@example.com","role":"MEMBER"}'
+# La respuesta trae "invitationUrl" (temporal, ver docs/DEBT.md) con el token
+
+# 3. La invitada se registra y acepta con su propia cuenta
+curl -c member.txt -X POST http://localhost:3000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"member@example.com","password":"correct-horse-battery","name":"Member"}'
+MEMBER_TOKEN="<accessToken de la respuesta>"
+
+curl -X POST http://localhost:3000/v1/invitations/<token>/accept \
+  -H "Authorization: Bearer $MEMBER_TOKEN"
+
+# 4. Como MEMBER, no puede expulsar a nadie (403)
+curl -i -X DELETE http://localhost:3000/v1/organizations/$ORG_ID/members/<owner-user-id> \
+  -H "Authorization: Bearer $MEMBER_TOKEN"
+
+# 5. La owner la asciende a ADMIN
+curl -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/members/<member-user-id> \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"role":"ADMIN"}'
+
+# 6. Como ADMIN, ahora si puede invitar...
+curl -i -X POST http://localhost:3000/v1/organizations/$ORG_ID/invitations \
+  -H "Authorization: Bearer $MEMBER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"email":"otra@example.com","role":"VIEWER"}'
+
+# 7. ...pero sigue sin poder tocar a la owner (409: no se puede modificar al owner)
+curl -i -X DELETE http://localhost:3000/v1/organizations/$ORG_ID/members/<owner-user-id> \
+  -H "Authorization: Bearer $MEMBER_TOKEN"
 ```
 
 ## Desarrollo fuera de Docker
@@ -152,7 +241,9 @@ src/
   modules/
     auth/                   Registro, login, refresh, logout, requireAuth
     users/                  Perfil y cambio de contraseña
-    organizations/          Organizaciones y membresia
+    organizations/          Organizaciones (alta, edicion, baja)
+    members/                Miembros: roles, expulsion, transferencia de propiedad
+    invitations/            Invitaciones por token opaco
     health/                 Health checks
     <dominio>/
       <dominio>.routes.ts       Definicion de rutas
@@ -161,6 +252,7 @@ src/
       <dominio>.repository.ts   Acceso a datos (unico lugar que toca Prisma)
       <dominio>.mapper.ts       Entidad -> DTO de respuesta
   shared/
+    authorization/          Matriz de permisos, requireMembership, requirePermission
     config/                 Configuracion tipada y validada al arranque
     db/                     Clientes de Postgres (Prisma) y Redis
     errors/                 Jerarquia de errores y middleware de errores
