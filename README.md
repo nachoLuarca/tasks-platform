@@ -1,5 +1,7 @@
 # tasks-platform
 
+[![CI](https://github.com/nachoLuarca/tasks-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/nachoLuarca/tasks-platform/actions/workflows/ci.yml)
+
 API multi-tenant de gestion de tareas: organizaciones con usuarios, roles y
 permisos granulares, proyectos y tareas, y una superficie de integracion via
 API keys y webhooks salientes. El protagonista del proyecto es la API; el
