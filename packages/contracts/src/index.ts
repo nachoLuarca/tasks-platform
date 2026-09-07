@@ -3,3 +3,6 @@ export * from './common.schema.js';
 export * from './auth.schema.js';
 export * from './users.schema.js';
 export * from './organizations.schema.js';
+export * from './roles.schema.js';
+export * from './members.schema.js';
+export * from './invitations.schema.js';

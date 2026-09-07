@@ -1,5 +1,6 @@
 import type { DbClient } from '../../shared/db/index.js';
 import { NotFoundError } from '../../shared/errors/index.js';
+import { membersService } from '../members/members.service.js';
 import { organizationsRepository } from './organizations.repository.js';
 import type { OrganizationEntity } from './organizations.types.js';
 
@@ -35,7 +36,7 @@ export const organizationsService = {
   ): Promise<OrganizationEntity> {
     const slug = await generateUniqueSlug(name, client);
     const organization = await organizationsRepository.create({ name, slug }, client);
-    await organizationsRepository.addMember(ownerId, organization.id, client);
+    await membersService.addOwner(ownerId, organization.id, client);
     return organization;
   },
 
@@ -43,22 +44,20 @@ export const organizationsService = {
     return organizationsRepository.listForUser(userId);
   },
 
-  /**
-   * Returns the organization only if `userId` is a member. A non-member
-   * gets the same 404 as a nonexistent organization, so membership is never
-   * revealed through the error type.
-   */
-  async getForMember(userId: string, organizationId: string): Promise<OrganizationEntity> {
+  /** Only reachable once `requireMembership` has already confirmed the caller belongs to it. */
+  async getById(organizationId: string): Promise<OrganizationEntity> {
     const organization = await organizationsRepository.findById(organizationId);
     if (!organization) {
       throw new NotFoundError('Organization not found');
     }
-
-    const isMember = await organizationsRepository.isMember(userId, organizationId);
-    if (!isMember) {
-      throw new NotFoundError('Organization not found');
-    }
-
     return organization;
+  },
+
+  async update(organizationId: string, name: string): Promise<OrganizationEntity> {
+    return organizationsRepository.update(organizationId, { name });
+  },
+
+  async remove(organizationId: string): Promise<void> {
+    await organizationsRepository.softDelete(organizationId);
   },
 };

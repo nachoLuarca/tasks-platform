@@ -61,6 +61,35 @@ usadas (Linux x64 para Docker y CI, mas la plataforma de desarrollo local).
 **Prioridad:** baja, es un costo de tiempo/espacio en la instalacion, no un
 problema de correctitud.
 
+## El enlace de invitacion se devuelve en la respuesta de la API, no por correo
+
+**Donde:** `apps/api/src/modules/invitations/invitations.controller.ts`
+(`create`), `packages/contracts/src/invitations.schema.ts`
+(`createInvitationResponseSchema`).
+
+**Que pasa:** `POST /v1/organizations/:organizationId/invitations` devuelve
+el campo `invitationUrl` con el enlace completo (`.../v1/invitations/:token`)
+en el cuerpo de la respuesta HTTP, en vez de enviarlo por correo a la persona
+invitada.
+
+**Por que se hizo asi:** el envio real de correo, la cola y el worker que la
+consume son alcance de la Fase 4 (ver PHASE.md, decision 8 de la Fase 2). Sin
+un mecanismo de entrega, la unica forma de que quien invita pueda compartir
+el enlace con la persona invitada es que la API se lo devuelva directamente.
+
+**Costo:** cualquier cliente con acceso a la respuesta HTTP (o a un log que la
+capture sin cuidado) puede ver el enlace de invitacion, que efectivamente es
+una credencial de un solo uso. En Fase 2 el consumidor de la API es de
+confianza (quien administra la organizacion), pero no es el diseño final.
+
+**Como resolverlo cuando se retome:** en la Fase 4, cuando exista la cola y
+el worker de correo, mover el envio del enlace a un job encolado tras crear
+la invitacion, y quitar `invitationUrl` de la respuesta HTTP (dejando solo la
+confirmacion de que la invitacion se creo).
+
+**Prioridad:** media — no es un problema mientras el proyecto no tenga
+usuarios reales, pero bloquea el cierre "real" del flujo de invitaciones.
+
 ## Prisma tiene una version mayor disponible
 
 **Donde:** `apps/api/package.json` (`prisma`, `@prisma/client`).

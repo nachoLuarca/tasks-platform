@@ -69,11 +69,28 @@ export interface IssuedRefreshToken {
   tokenHash: string;
 }
 
+/** SHA-256 of an opaque token. Only the hash is ever persisted (refresh tokens, invitations). */
+export function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 export function generateRefreshToken(): IssuedRefreshToken {
   const token = randomBytes(32).toString('base64url');
-  return { token, tokenHash: hashRefreshToken(token) };
+  return { token, tokenHash: hashToken(token) };
 }
 
 export function hashRefreshToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+  return hashToken(token);
+}
+
+export const INVITATION_TOKEN_TTL_DAYS = 7;
+
+export interface IssuedInvitationToken {
+  token: string;
+  tokenHash: string;
+}
+
+export function generateInvitationToken(): IssuedInvitationToken {
+  const token = randomBytes(32).toString('base64url');
+  return { token, tokenHash: hashToken(token) };
 }
