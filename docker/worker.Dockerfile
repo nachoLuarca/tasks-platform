@@ -26,6 +26,9 @@ FROM deps AS dev
 COPY . .
 RUN pnpm rebuild
 RUN pnpm --filter @tasks-platform/api exec prisma generate --schema prisma/schema.prisma
+# See docker/api.Dockerfile's dev stage for why CI=true and this chmod are here.
+ENV CI=true
+RUN chmod -R a+rwX node_modules apps/*/node_modules packages/*/node_modules
 EXPOSE 3100
 CMD ["pnpm", "run", "dev:worker"]
 

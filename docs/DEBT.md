@@ -4,6 +4,49 @@ Registro de atajos deliberados que quedaron documentados a proposito, para no
 perderlos de vista. Cuando se resuelva un punto, se borra de aca (el `git log`
 del commit que lo resuelve es la referencia historica).
 
+## Los contenedores de desarrollo pueden reinstalar dependencias al arrancar
+
+**Donde:** `docker/api.Dockerfile` y `docker/worker.Dockerfile`, stage `dev`.
+
+**Que pasa:** al arrancar, `pnpm run dev`/`dev:worker` ejecuta la
+verificacion automatica de pnpm ("deps status check") que compara el
+`pnpm-lock.yaml` montado desde el host contra el estado de `node_modules`
+del contenedor. Si detecta cualquier diferencia, purga y reinstala **todas**
+las dependencias del workspace desde el registro, dentro del contenedor, en
+vez de arrancar directo. Con una red lenta o inestable esto puede demorar
+varios minutos o, si una descarga puntual falla de forma persistente,
+terminar el proceso con error (el contenedor queda `Exited`).
+
+**Por que se hizo asi:** `user: "1000:1000"` en `docker-compose.yml` corre el
+proceso como el usuario del host (para que los archivos que el hot-reload
+toca queden con su dueño, no con el de root), pero `node_modules` se arma
+como root durante el build de la imagen; `CI=true` y un `chmod -R a+rwX`
+sobre `node_modules` (agregados para resolver esta fase) evitan que la
+purga aborte por falta de TTY o por permisos, pero no evitan que la purga
+*ocurra* cuando pnpm decide que hay que reinstalar.
+
+**Costo:** un `docker compose up` puede tardar bastante mas de lo esperado
+la primera vez que arranca despues de `docker compose down`/`--force-recreate
+-V`, o fallar de forma intermitente si la descarga de un paquete puntual
+falla durante la reinstalacion (visto en esta misma fase: un timeout
+descargando el motor de Prisma tumbo el contenedor `api` una vez; un
+`docker compose up -d api` posterior lo resolvio sin cambiar nada de
+codigo).
+
+**Como resolverlo cuando se retome:** investigar por que la verificacion de
+pnpm considera desactualizado un `node_modules` que en teoria coincide con
+el lockfile recien horneado en la imagen (sospecha: el archivo marcador que
+pnpm usa para esa comparacion vive dentro de `node_modules`, que es un
+volumen anonimo separado del bind mount del codigo fuente, y algo en ese
+volumen queda inconsistente entre builds). Una alternativa mas simple:
+agregar una politica de `restart: on-failure` a `api` y `worker` en
+`docker-compose.yml` para que un fallo de red puntual durante la
+reinstalacion se resuelva solo con un reintento, sin intervencion manual.
+
+**Prioridad:** media -- no bloquea un `docker compose up` con red estable,
+pero es una fuente de arranques lentos o fallidos intermitentes en entornos
+con conectividad restringida.
+
 ## La imagen de runtime de la API copia el `node_modules` completo del build
 
 **Donde:** `docker/api.Dockerfile`, stage `runtime`.

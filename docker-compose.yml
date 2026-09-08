@@ -7,6 +7,12 @@ services:
       dockerfile: docker/api.Dockerfile
       target: dev
     user: "1000:1000"
+    # See docs/DEBT.md: pnpm's automatic deps check can purge/reinstall
+    # node_modules on startup, and a single flaky network request during
+    # that reinstall can crash the process before it ever gets to `pnpm run
+    # dev`. A restart resolves it without touching code, so retry a few
+    # times before giving up.
+    restart: on-failure:3
     env_file:
       - .env
     environment:
@@ -45,6 +51,8 @@ services:
       dockerfile: docker/worker.Dockerfile
       target: dev
     user: "1000:1000"
+    # See the api service's comment above and docs/DEBT.md.
+    restart: on-failure:3
     env_file:
       - .env
     environment:

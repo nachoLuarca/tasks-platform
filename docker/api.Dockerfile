@@ -29,6 +29,20 @@ FROM deps AS dev
 COPY . .
 RUN pnpm rebuild
 RUN pnpm --filter @tasks-platform/api exec prisma generate --schema prisma/schema.prisma
+# pnpm >=10 runs an automatic "deps status check" before any `pnpm run`,
+# and purges/reinstalls node_modules if the bind-mounted
+# package.json/pnpm-lock.yaml (from the host) don't exactly match what's
+# baked into the image -- which happens any time a dependency changed on
+# the host after this image was last built. Two problems follow: the
+# purge needs a TTY this detached container doesn't have (CI=true makes
+# pnpm skip that prompt instead of aborting), and the purge/reinstall
+# itself needs write access to node_modules, which docker-compose's
+# `user: "1000:1000"` (so bind-mounted source files stay host-owned) can't
+# have -- node_modules was built as root in this same RUN step. `chmod` it
+# open so the non-root runtime user can still write there if pnpm decides
+# it must.
+ENV CI=true
+RUN chmod -R a+rwX node_modules apps/*/node_modules packages/*/node_modules
 EXPOSE 3000
 CMD ["pnpm", "run", "dev"]
 
