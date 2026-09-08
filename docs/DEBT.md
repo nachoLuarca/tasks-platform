@@ -61,34 +61,62 @@ usadas (Linux x64 para Docker y CI, mas la plataforma de desarrollo local).
 **Prioridad:** baja, es un costo de tiempo/espacio en la instalacion, no un
 problema de correctitud.
 
-## El enlace de invitacion se devuelve en la respuesta de la API, no por correo
+## El secreto del webhook se guarda en texto plano
 
-**Donde:** `apps/api/src/modules/invitations/invitations.controller.ts`
-(`create`), `packages/contracts/src/invitations.schema.ts`
-(`createInvitationResponseSchema`).
+**Donde:** columna `WebhookEndpoint.secret` (`apps/api/prisma/schema.prisma`).
 
-**Que pasa:** `POST /v1/organizations/:organizationId/invitations` devuelve
-el campo `invitationUrl` con el enlace completo (`.../v1/invitations/:token`)
-en el cuerpo de la respuesta HTTP, en vez de enviarlo por correo a la persona
-invitada.
+**Que pasa:** el secreto usado para firmar cada entrega (HMAC-SHA256) se
+guarda sin cifrar en la base. No es un token opaco verificable por hash como
+el refresh token o el de invitacion: el worker necesita el valor real para
+firmar cada entrega futura, asi que un hash de un solo sentido no sirve aca.
 
-**Por que se hizo asi:** el envio real de correo, la cola y el worker que la
-consume son alcance de la Fase 4 (ver PHASE.md, decision 8 de la Fase 2). Sin
-un mecanismo de entrega, la unica forma de que quien invita pueda compartir
-el enlace con la persona invitada es que la API se lo devuelva directamente.
+**Por que se hizo asi:** cifrar en reposo requiere un gestor de secretos
+(KMS, Vault, o equivalente) que todavia no existe en el proyecto. PHASE.md
+lo deja explicitamente fuera de alcance de esta fase y pide anotarlo aca.
 
-**Costo:** cualquier cliente con acceso a la respuesta HTTP (o a un log que la
-capture sin cuidado) puede ver el enlace de invitacion, que efectivamente es
-una credencial de un solo uso. En Fase 2 el consumidor de la API es de
-confianza (quien administra la organizacion), pero no es el diseño final.
+**Costo:** quien tenga acceso de lectura a la base de datos de produccion
+puede leer el secreto de cualquier webhook y falsificar entregas firmadas
+en su nombre.
 
-**Como resolverlo cuando se retome:** en la Fase 4, cuando exista la cola y
-el worker de correo, mover el envio del enlace a un job encolado tras crear
-la invitacion, y quitar `invitationUrl` de la respuesta HTTP (dejando solo la
-confirmacion de que la invitacion se creo).
+**Como resolverlo cuando se retome:** cuando exista un gestor de secretos
+(Fase 6 en el roadmap actual), cifrar `secret` en reposo (por ejemplo con
+envelope encryption) y descifrar solo en el momento de firmar, dentro del
+worker.
 
-**Prioridad:** media — no es un problema mientras el proyecto no tenga
-usuarios reales, pero bloquea el cierre "real" del flujo de invitaciones.
+**Prioridad:** media-alta antes de manejar webhooks de organizaciones reales;
+sin impacto mientras el proyecto no se despliegue con datos de produccion.
+
+## El despachador marca un evento como despachado antes de encolarlo
+
+**Donde:** `apps/worker/src/dispatcher/outbox-dispatcher.ts`
+(`dispatchOutboxBatch`).
+
+**Que pasa:** la transaccion que reclama eventos pendientes (`FOR UPDATE
+SKIP LOCKED`) marca `dispatchedAt` y confirma en Postgres; recien despues,
+ya fuera de esa transaccion, se encola el trabajo de entrega en BullMQ
+(Redis). Si el proceso muere exactamente en esa ventana, el evento queda
+marcado como despachado pero nunca llega a encolarse: no se entrega nunca,
+y el despachador no vuelve a intentarlo porque ya no esta "pendiente".
+
+**Por que se hizo asi:** Postgres y Redis son dos almacenes distintos; no
+hay una transaccion que abarque ambos. Marcar como despachado *despues* de
+encolar tiene el problema inverso (un crash entre encolar y marcar duplica
+la entrega); se eligio el orden que prioriza "nunca se entrega dos veces"
+sobre "siempre se entrega al menos una vez", ya que las entregas duplicadas
+son mas dificiles de razonar para quien integra un webhook que una perdida
+puntual y rara.
+
+**Costo:** en el caso extremadamente improbable de que el proceso del worker
+muera en esa ventana especifica, ese evento puntual no se entrega nunca, sin
+ningun reintento posterior.
+
+**Como resolverlo cuando se retome:** un barrido periodico que busque
+eventos con `dispatchedAt` antiguo (por ejemplo, mas de N minutos) y sin
+ninguna `WebhookDelivery` asociada, y los vuelva a encolar.
+
+**Prioridad:** baja: la ventana de riesgo es de milisegundos y requiere un
+crash exactamente ahi, no un fallo de red comun (esos ya estan cubiertos por
+los reintentos de BullMQ).
 
 ## Prisma tiene una version mayor disponible
 

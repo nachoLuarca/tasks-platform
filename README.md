@@ -15,12 +15,16 @@ renovacion de sesion con rotacion de refresh token, cierre de sesion y
 gestion basica de perfil. La Fase 2 (`v0.3.0`) agrego roles con permisos
 granulares, gestion de miembros e invitaciones. La Fase 3 (`v0.4.0`) agrego
 proyectos y tareas: numeracion por proyecto, bloqueo optimista, y listados
-paginados con filtros. La Fase 3.5 (en curso) cierra el dominio con
+paginados con filtros. La Fase 3.5 (`v0.5.0`) cerro el dominio con
 comentarios en las tareas, etiquetas reutilizables por organizacion, y una
-bitacora de actividad de solo lectura que prepara el terreno para los
-webhooks de la Fase 4. El detalle de alcance de la fase actual esta en
-[`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las convenciones
-del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+bitacora de actividad de solo lectura. La Fase 4 (en curso) agrega la
+superficie de integracion: cada cambio de la bitacora se publica como un
+evento saliente firmado hacia los webhooks suscriptos, con reintentos y
+desactivacion automatica tras fallos repetidos; API keys de organizacion con
+scopes propios; y un proceso worker aparte que despacha ambos, ademas del
+envio real del correo de invitacion. El detalle de alcance de la fase actual
+esta en [`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las
+convenciones del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Requisitos previos
 
@@ -36,20 +40,25 @@ cp .env.example .env
 docker compose up
 ```
 
-Esto levanta cuatro servicios: la API, PostgreSQL, Redis y Mailpit (servidor
-de correo local para desarrollo). La API queda escuchando en
-`http://localhost:3000` con recarga en caliente sobre el codigo montado desde
-el host.
+Esto levanta cinco servicios: la API, el worker (despacha webhooks y correo),
+PostgreSQL, Redis y Mailpit (servidor de correo local para desarrollo). La
+API queda escuchando en `http://localhost:3000` y el worker en
+`http://localhost:3100` (solo expone `/health`), ambos con recarga en
+caliente sobre el codigo montado desde el host.
 
 Verificacion rapida:
 
 ```bash
 curl http://localhost:3000/health/live
 curl http://localhost:3000/health/ready
+curl http://localhost:3100/health/live
+curl http://localhost:3100/health/ready
 ```
 
 `/health/ready` responde 200 solo si la base de datos y Redis estan
-alcanzables; si alguna falla, responde 503 indicando cual.
+alcanzables; si alguna falla, responde 503 indicando cual. El worker expone
+los mismos dos caminos, sin nada mas: PHASE.md pide que no tenga superficie
+HTTP mas alla de su propia salud.
 
 ### Migraciones de base de datos
 
@@ -114,6 +123,16 @@ Todas las rutas de la API llevan el prefijo `/v1`.
 | `DELETE .../labels/:labelId` | ✓ | Borra la etiqueta; la desvincula de sus tareas sin borrarlas (`label:manage`) |
 | `PUT .../tasks/:taskId/labels` | ✓ | Fija el conjunto completo de etiquetas de la tarea (creador/responsable, o `task:update:any`) |
 | `GET .../tasks/:taskId/activity` | ✓ | Bitacora de la tarea, paginada, mas reciente primero (`task:read`; sin endpoint de escritura) |
+| `POST /v1/organizations/:organizationId/webhooks` | ✓ | Crea un webhook; devuelve el secreto una sola vez (`webhook:manage`) |
+| `GET /v1/organizations/:organizationId/webhooks` | ✓ | Lista los webhooks, sin el secreto (`webhook:manage`) |
+| `PATCH .../webhooks/:webhookId` | ✓ | Edita url/eventos/`enabled` (`webhook:manage`) |
+| `DELETE .../webhooks/:webhookId` | ✓ | Borra el webhook (`webhook:manage`) |
+| `POST .../webhooks/:webhookId/rotate-secret` | ✓ | Rota el secreto; lo devuelve una sola vez (`webhook:manage`) |
+| `POST .../webhooks/:webhookId/test` | ✓ | Dispara un evento de prueba por el mismo pipeline real (`webhook:manage`) |
+| `GET .../webhooks/:webhookId/deliveries` | ✓ | Historial de entregas, paginado (`webhook:manage`) |
+| `POST /v1/organizations/:organizationId/api-keys` | ✓ | Crea una API key; devuelve la clave completa una sola vez (`apikey:manage`) |
+| `GET /v1/organizations/:organizationId/api-keys` | ✓ | Lista las API keys (prefijo, scopes, ultimo uso; nunca la clave) (`apikey:manage`) |
+| `DELETE .../api-keys/:apiKeyId` | ✓ | Revoca una API key (`apikey:manage`) |
 
 A un usuario que no es miembro de la organizacion, todas las rutas bajo
 `/v1/organizations/:organizationId` le responden 404 (nunca 403): no se
@@ -290,6 +309,8 @@ y se explica en
 | `comment:delete:own`    |   ✓   |   ✓   |   ✓    |        |
 | `comment:delete:any`    |   ✓   |   ✓   |        |        |
 | `label:manage`          |   ✓   |   ✓   |        |        |
+| `webhook:manage`        |   ✓   |   ✓   |        |        |
+| `apikey:manage`         |   ✓   |   ✓   |        |        |
 
 ¹ OWNER/ADMIN no necesitan `task:assign:self` porque ya tienen `task:assign`
 (sin restricciones), que cubre autoasignarse tambien; no esta en su fila de
@@ -316,7 +337,111 @@ pueden hacerlo con cualquier tarea del proyecto.
 Las rutas marcadas con auth requieren el header `Authorization: Bearer <access_token>`.
 El refresh token nunca aparece en el cuerpo de una respuesta: viaja unicamente
 en una cookie `httpOnly` (`refresh_token`), que el navegador o `curl -c/-b`
-manejan automaticamente.
+manejan automaticamente. Ese mismo header tambien acepta una **API key**
+(`Authorization: Bearer tp_live_...`) en vez de un JWT -- ver la seccion
+[API keys](#api-keys) mas abajo.
+
+### Webhooks: guia de integracion
+
+Cada cambio que la [bitacora](#comentarios-etiquetas-y-bitacora) registra se
+publica, en la misma transaccion que lo produce, como un `OutboxEvent` (ver
+[`docs/adr/0009-outbox-pattern.md`](./docs/adr/0009-outbox-pattern.md)). El
+worker lo despacha a cada webhook suscripto a ese tipo de evento, con hasta 5
+reintentos con espera creciente (ver
+[`docs/DEBT.md`](./docs/DEBT.md) para la unica ventana de perdida conocida).
+Tras 20 fallos consecutivos, el endpoint se desactiva solo.
+
+**Catalogo de eventos** (el mismo `type` que trae cada entrada de la
+bitacora): `TASK_CREATED`, `STATUS_CHANGED`, `PRIORITY_CHANGED`,
+`ASSIGNEE_CHANGED`, `DUE_DATE_CHANGED`, `TITLE_CHANGED`, `LABELS_CHANGED`,
+`COMMENT_ADDED`.
+
+**Suscribirse:**
+
+```bash
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/webhooks \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"url":"https://mi-servidor.example.com/hooks","eventTypes":["STATUS_CHANGED","TASK_CREATED"]}'
+# La respuesta trae "secret": "whsec_..." -- guardalo ahora, no vuelve a aparecer
+```
+
+**Cada entrega** llega como un `POST` con el cuerpo JSON del evento y una
+cabecera `X-Webhook-Signature: t=<timestamp>,v1=<hmac-hex>` (ver
+[`docs/adr/0010-webhook-signing.md`](./docs/adr/0010-webhook-signing.md)).
+Para verificarla: HMAC-SHA256 de `"${t}.${body}"` con el secreto, comparado
+contra `v1` con una comparacion de tiempo constante; rechazar tambien si `t`
+esta a mas de 5 minutos del reloj propio.
+
+_Node.js_ (la misma funcion que usa el propio proyecto, en
+[`packages/shared/src/security/webhook-signature.ts`](./packages/shared/src/security/webhook-signature.ts)):
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function verify(secret, rawBody, header, toleranceSeconds = 300) {
+  const parts = Object.fromEntries(header.split(',').map((p) => p.split('=')));
+  const t = Number(parts.t);
+  if (!parts.t || !parts.v1 || Math.abs(Date.now() / 1000 - t) > toleranceSeconds) return false;
+  const expected = createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex');
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(parts.v1, 'hex');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+```
+
+_PHP:_
+
+```php
+function verify_webhook(string $secret, string $rawBody, string $header, int $tolerance = 300): bool {
+    $parts = [];
+    foreach (explode(',', $header) as $pair) {
+        [$key, $value] = explode('=', $pair, 2);
+        $parts[$key] = $value;
+    }
+    if (!isset($parts['t'], $parts['v1']) || abs(time() - (int) $parts['t']) > $tolerance) {
+        return false;
+    }
+    $expected = hash_hmac('sha256', $parts['t'] . '.' . $rawBody, $secret);
+    return hash_equals($expected, $parts['v1']);
+}
+```
+
+**Depurar una integracion:** `GET .../webhooks/:webhookId/deliveries` trae,
+paginado, cada intento con su codigo de respuesta, duracion y un fragmento
+del cuerpo devuelto. `POST .../webhooks/:webhookId/test` manda un evento
+ficticio por el mismo circuito real, sin esperar a que ocurra un cambio de
+verdad.
+
+### API keys
+
+Credenciales de organizacion (no de un usuario particular), pensadas para
+integraciones de servidor a servidor. Llevan un prefijo visible
+(`tp_live_...`) y solo se guarda su hash; la clave completa se muestra una
+sola vez, al crearla.
+
+Los `scopes` de una key son independientes del rol de quien la crea, y en
+esta fase son deliberadamente de **solo lectura**
+(`project:read`, `task:read`, `member:list` -- ver el porque en
+[`apps/api/src/shared/authorization/api-key-scopes.ts`](./apps/api/src/shared/authorization/api-key-scopes.ts)):
+una key no borra ni crea nada, sin importar que la haya creado el `OWNER`.
+
+```bash
+# Crear una key de solo lectura
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/api-keys \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"CI read-only","scopes":["task:read","project:read"]}'
+# La respuesta trae "key": "tp_live_..." -- guardala ahora, no vuelve a aparecer
+API_KEY="<key de la respuesta>"
+
+# Lista tareas...
+curl http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $API_KEY"
+
+# ...pero no puede crear una (403: sin el scope task:create, que ninguna key puede tener)
+curl -i -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"title":"No deberia poder crear esto"}'
+```
 
 ### Recorrido completo con curl
 
@@ -364,7 +489,11 @@ ORG_ID="<id de la organizacion listada>"
 curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/invitations \
   -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
   -d '{"email":"member@example.com","role":"MEMBER"}'
-# La respuesta trae "invitationUrl" (temporal, ver docs/DEBT.md) con el token
+# El enlace ya no viene en la respuesta (ver docs/DEBT.md, resuelto en la
+# Fase 4): se envia por correo. En desarrollo, Mailpit lo recibe en
+# http://localhost:8025 -- abrilo ahi y copia el token de la URL "Aceptar
+# invitacion", o mira el correo mas nuevo con:
+curl -s "http://localhost:8025/api/v1/messages" | grep -o '"ID":"[^"]*"' | head -1
 
 # 3. La invitada se registra y acepta con su propia cuenta
 curl -c member.txt -X POST http://localhost:3000/v1/auth/register \
@@ -421,9 +550,10 @@ Scripts disponibles en la raiz del monorepo:
 tasks-platform/
   apps/
     api/                  Servicio HTTP (Express + TypeScript)
-    worker/                Consumidor de la cola (sin logica todavia)
+    worker/               Despacha el outbox, entrega webhooks y envia correo
   packages/
-    contracts/             Esquemas Zod y tipos compartidos entre API y frontend
+    contracts/            Esquemas Zod y tipos compartidos entre API y frontend
+    shared/               Config, DB, logger, firma de webhooks y colas compartidas por api y worker
   docker/                 Dockerfile(s) de los servicios
   docs/
     adr/                  Registros de decisiones de arquitectura
@@ -447,6 +577,9 @@ src/
     comments/               Comentarios de una tarea
     labels/                 Etiquetas de la organizacion y su vinculo con tareas
     activity/               Bitacora de actividad de una tarea (solo lectura)
+    outbox/                 Escritura de eventos publicables (sin endpoints propios)
+    webhooks/               Endpoints salientes: CRUD, firma, entregas
+    api-keys/               Credenciales de organizacion con scopes propios
     health/                 Health checks
     <dominio>/
       <dominio>.routes.ts       Definicion de rutas
