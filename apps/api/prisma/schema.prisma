@@ -20,9 +20,12 @@ model User {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  memberships     Membership[]
-  refreshTokens   RefreshToken[]
-  invitationsSent Invitation[]
+  memberships      Membership[]
+  refreshTokens    RefreshToken[]
+  invitationsSent  Invitation[]
+  projectsCreated  Project[]
+  tasksCreated     Task[]       @relation("TaskCreator")
+  tasksAssigned    Task[]       @relation("TaskAssignee")
 }
 
 model Organization {
@@ -35,6 +38,7 @@ model Organization {
 
   memberships Membership[]
   invitations Invitation[]
+  projects    Project[]
 }
 
 enum Role {
@@ -104,4 +108,78 @@ model RefreshToken {
 
   @@index([familyId])
   @@index([userId])
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// "key" (e.g. "ENG") is unique per organization, not globally: two different
+// organizations can each have their own "ENG" project. taskCounter is
+// incremented and read inside the same transaction that creates a task (see
+// tasks.repository.ts), so it doubles as "the last number handed out" -- it
+// is never decremented, so numbers are never reused after a delete.
+model Project {
+  id             String        @id @default(uuid())
+  organizationId String
+  key            String
+  name           String
+  description    String?
+  status         ProjectStatus @default(ACTIVE)
+  taskCounter    Int           @default(0)
+  createdById    String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  tasks        Task[]
+
+  @@unique([organizationId, key])
+}
+
+// "version" implements optimistic locking: every update must include the
+// version it read, and the update only succeeds if it still matches the row
+// in the database (see docs/adr/0007-optimistic-locking.md).
+model Task {
+  id          String       @id @default(uuid())
+  projectId   String
+  number      Int
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  assigneeId  String?
+  createdById String
+  dueDate     DateTime?
+  completedAt DateTime?
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  project   Project @relation(fields: [projectId], references: [id])
+  assignee  User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy User    @relation("TaskCreator", fields: [createdById], references: [id])
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([assigneeId])
+  @@index([dueDate])
 }
