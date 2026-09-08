@@ -9,11 +9,11 @@ import { commentsRepository } from './comments.repository.js';
 import type { CommentEntity } from './comments.types.js';
 
 export const commentsService = {
-  async create(taskId: string, authorId: string, body: string): Promise<CommentEntity> {
+  async create(taskId: string, organizationId: string, authorId: string, body: string): Promise<CommentEntity> {
     return prisma.$transaction(async (tx) => {
       const comment = await commentsRepository.create({ taskId, authorId, body }, tx);
       await activityService.record(
-        { taskId, actorId: authorId, type: 'COMMENT_ADDED', before: null, after: { commentId: comment.id, body } },
+        { taskId, organizationId, actorId: authorId, type: 'COMMENT_ADDED', before: null, after: { commentId: comment.id, body } },
         tx,
       );
       return comment;

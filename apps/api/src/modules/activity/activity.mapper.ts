@@ -6,7 +6,7 @@ export function toTaskActivityResponse(entry: TaskActivityEntity): TaskActivityR
   return {
     id: entry.id,
     taskId: entry.taskId,
-    actorId: entry.actorId,
+    actor: entry.actor,
     type: entry.type,
     changes: entry.changes,
     createdAt: entry.createdAt.toISOString(),

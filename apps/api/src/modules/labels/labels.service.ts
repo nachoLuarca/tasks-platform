@@ -56,6 +56,7 @@ export const labelsService = {
       await activityService.record(
         {
           taskId,
+          organizationId,
           actorId,
           type: 'LABELS_CHANGED',
           before: before.map((label) => label.name),
