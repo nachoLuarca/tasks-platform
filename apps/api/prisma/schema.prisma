@@ -364,7 +364,7 @@ model WebhookDelivery {
   durationMs      Int
   createdAt       DateTime  @default(now())
 
-  endpoint    WebhookEndpoint @relation(fields: [endpointId], references: [id])
+  endpoint    WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
   outboxEvent OutboxEvent     @relation(fields: [outboxEventId], references: [id])
 
   @@index([endpointId, createdAt])
