@@ -1,18 +1,14 @@
-import type { Request, RequestHandler } from 'express';
+import type { RequestHandler } from 'express';
 
 import type { CreateInvitationRequest } from '@tasks-platform/contracts';
 
+import { requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { usersService } from '../users/users.service.js';
 import { toCreateInvitationResponse, toInvitationPreviewResponse, toInvitationResponse } from './invitations.mapper.js';
 import { invitationsService } from './invitations.service.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
+const getAuthenticatedUserId = requireUserId;
 
 function getOrganizationId(req: { membership?: { organizationId: string } }): string {
   if (!req.membership) {
@@ -21,25 +17,15 @@ function getOrganizationId(req: { membership?: { organizationId: string } }): st
   return req.membership.organizationId;
 }
 
-/** Sending the real email is Phase 4; for now the link is handed back directly (see docs/DEBT.md). */
-function buildInvitationUrl(req: Request, token: string): string {
-  return `${req.protocol}://${req.get('host')}/v1/invitations/${token}`;
-}
-
 export const invitationsController = {
   create: (async (req, res) => {
     const organizationId = getOrganizationId(req);
     const invitedById = getAuthenticatedUserId(req);
     const body = req.body as CreateInvitationRequest;
 
-    const { invitation, token } = await invitationsService.create(
-      organizationId,
-      invitedById,
-      body.email,
-      body.role,
-    );
+    const invitation = await invitationsService.create(organizationId, invitedById, body.email, body.role);
 
-    res.status(201).json(toCreateInvitationResponse(invitation, buildInvitationUrl(req, token)));
+    res.status(201).json(toCreateInvitationResponse(invitation));
   }) satisfies RequestHandler,
 
   listPending: (async (req, res) => {

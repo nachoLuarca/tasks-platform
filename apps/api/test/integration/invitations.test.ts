@@ -5,6 +5,7 @@ import { buildApp } from '../../src/app.js';
 import { prisma } from '../../src/shared/db/index.js';
 import { registerAndGetSession } from '../helpers/auth.js';
 import { resetDatabase } from '../helpers/db.js';
+import { getInvitationToken } from '../helpers/invitations.js';
 
 const app = buildApp();
 
@@ -28,13 +29,15 @@ async function createInvitation(accessToken: string, organizationId: string, ema
 }
 
 describe('invitations', () => {
-  it('creates an invitation and returns a temporary link, then lists it as pending', async () => {
+  it('creates an invitation, queues the invitation email, and lists it as pending', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
 
     const createResponse = await createInvitation(accessToken, organizationId, invitee.email);
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.email).toBe(invitee.email);
-    expect(createResponse.body.invitationUrl).toContain('/v1/invitations/');
+    expect(createResponse.body.invitationUrl).toBeUndefined();
+    const token = await getInvitationToken(invitee.email);
+    expect(token).toBeTruthy();
 
     const listResponse = await request(app)
       .get(`/v1/organizations/${organizationId}/invitations`)
@@ -79,7 +82,7 @@ describe('invitations', () => {
   it('shows a public preview with only organization, inviter and role', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
     const created = await createInvitation(accessToken, organizationId, invitee.email, 'ADMIN');
-    const token = (created.body.invitationUrl as string).split('/').pop();
+    const token = await getInvitationToken(invitee.email);
 
     const response = await request(app).get(`/v1/invitations/${token}`);
 
@@ -99,7 +102,7 @@ describe('invitations', () => {
   it('accepts an invitation with the matching account and grants the offered role', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
     const created = await createInvitation(accessToken, organizationId, invitee.email, 'MEMBER');
-    const token = (created.body.invitationUrl as string).split('/').pop();
+    const token = await getInvitationToken(invitee.email);
 
     const inviteeSession = await registerAndGetSession(app, invitee);
 
@@ -119,7 +122,7 @@ describe('invitations', () => {
   it('rejects acceptance from an account with a different email', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
     const created = await createInvitation(accessToken, organizationId, invitee.email);
-    const token = (created.body.invitationUrl as string).split('/').pop();
+    const token = await getInvitationToken(invitee.email);
 
     const outsiderSession = await registerAndGetSession(app, outsider);
 
@@ -132,7 +135,7 @@ describe('invitations', () => {
   it('rejects acceptance of an already-used invitation', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
     const created = await createInvitation(accessToken, organizationId, invitee.email);
-    const token = (created.body.invitationUrl as string).split('/').pop();
+    const token = await getInvitationToken(invitee.email);
     const inviteeSession = await registerAndGetSession(app, invitee);
 
     await request(app)
@@ -149,7 +152,7 @@ describe('invitations', () => {
   it('rejects acceptance of a revoked invitation', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
     const created = await createInvitation(accessToken, organizationId, invitee.email);
-    const token = (created.body.invitationUrl as string).split('/').pop();
+    const token = await getInvitationToken(invitee.email);
 
     await request(app)
       .delete(`/v1/organizations/${organizationId}/invitations/${created.body.id}`)
@@ -165,7 +168,7 @@ describe('invitations', () => {
   it('rejects acceptance of an expired invitation', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
     const created = await createInvitation(accessToken, organizationId, invitee.email);
-    const token = (created.body.invitationUrl as string).split('/').pop();
+    const token = await getInvitationToken(invitee.email);
 
     await prisma.invitation.update({
       where: { id: created.body.id },
