@@ -12,11 +12,15 @@ La Fase 0 (`v0.1.0`) dejo el esqueleto del proyecto funcionando de punta a
 punta, sin logica de dominio. La Fase 1 (`v0.2.0`) agrego usuarios,
 organizaciones y el ciclo completo de autenticacion: registro, login,
 renovacion de sesion con rotacion de refresh token, cierre de sesion y
-gestion basica de perfil. La Fase 2 (en curso) agrega roles con permisos
-granulares, gestion de miembros e invitaciones, para que una organizacion
-deje de ser de una sola persona. El detalle de alcance de la fase actual esta
-en [`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las
-convenciones del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+gestion basica de perfil. La Fase 2 (`v0.3.0`) agrego roles con permisos
+granulares, gestion de miembros e invitaciones. La Fase 3 (`v0.4.0`) agrego
+proyectos y tareas: numeracion por proyecto, bloqueo optimista, y listados
+paginados con filtros. La Fase 3.5 (en curso) cierra el dominio con
+comentarios en las tareas, etiquetas reutilizables por organizacion, y una
+bitacora de actividad de solo lectura que prepara el terreno para los
+webhooks de la Fase 4. El detalle de alcance de la fase actual esta en
+[`PHASE.md`](./PHASE.md); las decisiones de arquitectura y las convenciones
+del proyecto estan en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Requisitos previos
 
@@ -100,6 +104,16 @@ Todas las rutas de la API llevan el prefijo `/v1`.
 | `POST .../tasks/:taskId/assign` | ✓ | Asigna la tarea a un miembro de la organizacion (`task:assign`) |
 | `POST .../tasks/:taskId/unassign` | ✓ | Le quita el responsable (`task:assign`) |
 | `GET /v1/organizations/:organizationId/tasks` | ✓ | Tareas asignadas al usuario en toda la organizacion, mismos filtros |
+| `POST .../tasks/:taskId/comments` | ✓ | Comenta la tarea (`comment:create`) |
+| `GET .../tasks/:taskId/comments` | ✓ | Lista comentarios, paginado, orden cronologico (`task:read`) |
+| `PATCH .../comments/:commentId` | ✓ | Edita un comentario; solo el autor (`comment:update:own`) |
+| `DELETE .../comments/:commentId` | ✓ | Borra un comentario (autor con `comment:delete:own`, o `comment:delete:any`) |
+| `POST /v1/organizations/:organizationId/labels` | ✓ | Crea una etiqueta (`label:manage`) |
+| `GET /v1/organizations/:organizationId/labels` | ✓ | Lista las etiquetas de la organizacion (`task:read`) |
+| `PATCH .../labels/:labelId` | ✓ | Renombra o recolorea una etiqueta (`label:manage`) |
+| `DELETE .../labels/:labelId` | ✓ | Borra la etiqueta; la desvincula de sus tareas sin borrarlas (`label:manage`) |
+| `PUT .../tasks/:taskId/labels` | ✓ | Fija el conjunto completo de etiquetas de la tarea (creador/responsable, o `task:update:any`) |
+| `GET .../tasks/:taskId/activity` | ✓ | Bitacora de la tarea, paginada, mas reciente primero (`task:read`; sin endpoint de escritura) |
 
 A un usuario que no es miembro de la organizacion, todas las rutas bajo
 `/v1/organizations/:organizationId` le responden 404 (nunca 403): no se
@@ -175,6 +189,71 @@ curl -i -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJEC
 # 409: la version ya no coincide, hay que releer la tarea primero
 ```
 
+### Comentarios, etiquetas y bitacora
+
+Los comentarios son de la tarea, en orden cronologico; solo su autor puede
+editarlos, y editar deja `editedAt` marcado en la respuesta. Borrarlos puede
+el autor o un `ADMIN`/`OWNER` (moderacion).
+
+Las etiquetas son de la organizacion, no del proyecto: se reutilizan entre
+proyectos, con nombre unico sin distinguir mayusculas ("Bug" y "bug" chocan)
+y color hexadecimal (`#3B82F6`). `PUT .../tasks/:taskId/labels` reemplaza el
+conjunto completo de etiquetas de una tarea de una vez; quien puede editar la
+tarea puede cambiarle las etiquetas, sin necesitar `label:manage` (eso es
+solo para crear/renombrar/borrar la etiqueta en si). El listado de tareas
+acepta ademas el filtro `labelId`.
+
+La bitacora (`GET .../tasks/:taskId/activity`) registra, sin que nadie la
+escriba a mano, la creacion de la tarea y cada cambio de estado, prioridad,
+responsable, fecha de vencimiento, titulo o etiquetas, mas cada comentario
+nuevo -- cada entrada trae `type`, `changes: { before, after }`, quien y
+cuando. Se escribe en la misma transaccion que el cambio que describe, asi
+que una actualizacion que falla no deja rastro (ver
+[`docs/adr/0008-activity-log.md`](./docs/adr/0008-activity-log.md)). No
+existe ningun endpoint para crearla, editarla o borrarla a mano.
+
+```bash
+TASK_ID="<id de una tarea existente>"
+
+# Comentar la tarea
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID/comments \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"body":"Reviso esto manana"}'
+COMMENT_ID="<id del comentario creado>"
+
+# Editarlo (solo el autor puede) y ver editedAt
+curl -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID/comments/$COMMENT_ID \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"body":"Reviso esto hoy mismo"}'
+
+# Crear dos etiquetas y aplicarlas a la tarea
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/labels \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Bug","color":"#EF4444"}'
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/labels \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Urgente","color":"#F97316"}'
+LABEL_ID_1="<id de Bug>"
+LABEL_ID_2="<id de Urgente>"
+
+curl -X PUT http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID/labels \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"labelIds\":[\"$LABEL_ID_1\",\"$LABEL_ID_2\"]}"
+
+# Filtrar tareas por etiqueta
+curl "http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks?labelId=$LABEL_ID_1" \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+
+# Cambiar estado y prioridad
+curl -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"version":1,"status":"IN_PROGRESS","priority":"HIGH"}'
+
+# Consultar la bitacora: cada cambio con su valor anterior y el nuevo
+curl "http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID/activity" \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+```
+
 ### Roles y permisos
 
 Cuatro roles fijos, no configurables. La matriz completa vive en
@@ -205,6 +284,23 @@ y se explica en
 | `task:update:any`       |   ✓   |   ✓   |        |        |
 | `task:delete:own`       |   ✓   |   ✓   |   ✓    |        |
 | `task:delete:any`       |   ✓   |   ✓   |        |        |
+| `task:assign:self`      |   ✓¹  |   ✓¹  |   ✓    |        |
+| `comment:create`        |   ✓   |   ✓   |   ✓    |        |
+| `comment:update:own`    |   ✓   |   ✓   |   ✓    |        |
+| `comment:delete:own`    |   ✓   |   ✓   |   ✓    |        |
+| `comment:delete:any`    |   ✓   |   ✓   |        |        |
+| `label:manage`          |   ✓   |   ✓   |        |        |
+
+¹ OWNER/ADMIN no necesitan `task:assign:self` porque ya tienen `task:assign`
+(sin restricciones), que cubre autoasignarse tambien; no esta en su fila de
+la matriz porque seria redundante, no porque les falte la capacidad.
+
+No hay `comment:update:any` en ningun rol: nadie edita el comentario de
+otra persona, ni el `OWNER` (ver
+[`docs/adr/0005-permission-matrix.md`](./docs/adr/0005-permission-matrix.md)).
+Tampoco hay `comment:read` ni `activity:read`: leer los comentarios o la
+bitacora de una tarea es parte de leer esa tarea, asi que ambas rutas
+reusan `task:read`.
 
 Ademas de la matriz, un puñado de invariantes de estado se aplican siempre,
 sin excepcion de rol: siempre existe exactamente un `OWNER`; no se lo puede
@@ -346,6 +442,11 @@ src/
     organizations/          Organizaciones (alta, edicion, baja)
     members/                Miembros: roles, expulsion, transferencia de propiedad
     invitations/            Invitaciones por token opaco
+    projects/               Proyectos (clave, estado, contador de tareas)
+    tasks/                  Tareas: numeracion, bloqueo optimista, asignacion
+    comments/               Comentarios de una tarea
+    labels/                 Etiquetas de la organizacion y su vinculo con tareas
+    activity/               Bitacora de actividad de una tarea (solo lectura)
     health/                 Health checks
     <dominio>/
       <dominio>.routes.ts       Definicion de rutas
