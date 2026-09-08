@@ -6,3 +6,6 @@ export * from './organizations.schema.js';
 export * from './roles.schema.js';
 export * from './members.schema.js';
 export * from './invitations.schema.js';
+export * from './pagination.schema.js';
+export * from './projects.schema.js';
+export * from './tasks.schema.js';
