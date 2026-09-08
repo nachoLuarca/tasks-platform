@@ -85,10 +85,95 @@ Todas las rutas de la API llevan el prefijo `/v1`.
 | `DELETE /v1/organizations/:organizationId/invitations/:id` | ✓ | Revoca una invitacion |
 | `GET /v1/invitations/:token` | - | Vista previa publica: organizacion, quien invita y el rol ofrecido |
 | `POST /v1/invitations/:token/accept` | ✓ | Acepta la invitacion (el correo de la cuenta debe coincidir con el invitado) |
+| `POST /v1/organizations/:organizationId/projects` | ✓ | Crea un proyecto (`project:create`) |
+| `GET /v1/organizations/:organizationId/projects` | ✓ | Lista proyectos, paginado, con filtro `status` |
+| `GET .../projects/:projectId` | ✓ | Un proyecto (`project:read`) |
+| `PATCH .../projects/:projectId` | ✓ | Edita el proyecto (`project:update`) |
+| `DELETE .../projects/:projectId` | ✓ | Borra el proyecto (logico); sus tareas dejan de listarse (`project:delete`) |
+| `POST .../projects/:projectId/archive` | ✓ | Archiva el proyecto (`project:update`) |
+| `POST .../projects/:projectId/unarchive` | ✓ | Lo vuelve a activar (`project:update`) |
+| `POST .../projects/:projectId/tasks` | ✓ | Crea una tarea, numerada automaticamente (`task:create`) |
+| `GET .../projects/:projectId/tasks` | ✓ | Lista tareas del proyecto, paginado, con filtros y orden (`task:read`) |
+| `GET .../tasks/:taskId` | ✓ | Una tarea (`task:read`) |
+| `PATCH .../tasks/:taskId` | ✓ | Edita la tarea; exige `version`, 409 si no coincide (creador/responsable, o `task:update:any`) |
+| `DELETE .../tasks/:taskId` | ✓ | Borra la tarea (logico) (creador/responsable, o `task:delete:any`) |
+| `POST .../tasks/:taskId/assign` | ✓ | Asigna la tarea a un miembro de la organizacion (`task:assign`) |
+| `POST .../tasks/:taskId/unassign` | ✓ | Le quita el responsable (`task:assign`) |
+| `GET /v1/organizations/:organizationId/tasks` | ✓ | Tareas asignadas al usuario en toda la organizacion, mismos filtros |
 
 A un usuario que no es miembro de la organizacion, todas las rutas bajo
 `/v1/organizations/:organizationId` le responden 404 (nunca 403): no se
-revela si la organizacion existe.
+revela si la organizacion existe. Lo mismo pasa con un proyecto o una tarea
+que no existen, pertenecen a otra organizacion, o estan borrados.
+
+### Proyectos y tareas
+
+Cada proyecto tiene una `key` unica dentro de su organizacion, de 2 a 5
+letras mayusculas (`ENG`, `WEB`, `OPS`). Las tareas se numeran dentro de su
+proyecto (1, 2, 3...); el numero se asigna incrementando un contador en la
+misma transaccion que crea la tarea, para que dos creaciones simultaneas
+nunca reciban el mismo numero (ver
+[`apps/api/src/modules/tasks/tasks.repository.ts`](./apps/api/src/modules/tasks/tasks.repository.ts),
+metodo `createWithNextNumber`).
+
+Actualizar una tarea (`PATCH`) exige mandar la `version` que se leyo; si ya
+no coincide con la de la base, la respuesta es 409 (ver
+[`docs/adr/0007-optimistic-locking.md`](./docs/adr/0007-optimistic-locking.md)).
+Pasar el `status` a `DONE` registra `completedAt`; sacarlo de `DONE` lo
+limpia. Solo se puede asignar una tarea a alguien que ya es miembro de la
+organizacion; a cualquier otra persona, 422.
+
+Los listados de proyectos y tareas se paginan por cursor, no por numero de
+pagina (ver
+[`docs/adr/0006-cursor-pagination.md`](./docs/adr/0006-cursor-pagination.md)):
+la respuesta trae `{ "data": [...], "nextCursor": "..." }`, y `nextCursor` es
+`null` cuando no hay mas paginas. `limit` por defecto es 20, maximo 100. Los
+filtros de tareas son `status`, `priority`, `assigneeId`, `unassigned=true`,
+`dueBefore`/`dueAfter` (ISO 8601) y `search` (coincidencia simple en el
+titulo); el orden (`sortBy`) puede ser `createdAt` (por defecto), `dueDate` o
+`priority`, con `sortOrder` `asc` o `desc`.
+
+```bash
+# Crear un proyecto
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"key":"ENG","name":"Engineering"}'
+PROJECT_ID="<id del proyecto creado>"
+
+# Crear tres tareas y ver la numeracion correlativa (1, 2, 3)
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Disenar el esquema"}'
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Escribir la migracion","priority":"HIGH"}'
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Escribir tests"}'
+
+# Filtrar por estado y por responsable
+curl "http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks?status=TODO" \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+curl "http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks?assigneeId=$OWNER_USER_ID" \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+
+# Recorrer dos paginas con el cursor
+curl "http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks?limit=2" \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+# La respuesta trae "nextCursor"; se reenvia tal cual en la siguiente llamada
+curl "http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks?limit=2&cursor=<nextCursor>" \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+
+# Provocar un 409 enviando una version vieja
+TASK_ID="<id de una de las tareas creadas>"
+curl -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"version":1,"title":"Primer cambio"}'
+curl -i -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID \
+  -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"version":1,"title":"Segundo cambio con version vieja"}'
+# 409: la version ya no coincide, hay que releer la tarea primero
+```
 
 ### Roles y permisos
 
@@ -109,11 +194,28 @@ y se explica en
 | `invitation:create`     |   ✓   |   ✓   |        |        |
 | `invitation:list`       |   ✓   |   ✓   |        |        |
 | `invitation:revoke`     |   ✓   |   ✓   |        |        |
+| `project:create`        |   ✓   |   ✓   |        |        |
+| `project:read`          |   ✓   |   ✓   |   ✓    |   ✓    |
+| `project:update`        |   ✓   |   ✓   |        |        |
+| `project:delete`        |   ✓   |   ✓   |        |        |
+| `task:create`           |   ✓   |   ✓   |   ✓    |        |
+| `task:read`             |   ✓   |   ✓   |   ✓    |   ✓    |
+| `task:assign`           |   ✓   |   ✓   |        |        |
+| `task:update:own`       |   ✓   |   ✓   |   ✓    |        |
+| `task:update:any`       |   ✓   |   ✓   |        |        |
+| `task:delete:own`       |   ✓   |   ✓   |   ✓    |        |
+| `task:delete:any`       |   ✓   |   ✓   |        |        |
 
 Ademas de la matriz, un puñado de invariantes de estado se aplican siempre,
 sin excepcion de rol: siempre existe exactamente un `OWNER`; no se lo puede
 degradar ni expulsar; no puede abandonar la organizacion sin transferir la
 propiedad antes; y ni siquiera un `ADMIN` puede modificarlo o expulsarlo.
+
+"Propio" (`:own`), para una tarea, es ser su creador o su responsable
+asignado; lo decide `tasks.service.ts` comparando ids, nunca comparando
+roles. Un `MEMBER` puede crear, editar y borrar sus propias tareas (las que
+creo o las que le asignaron), pero no las de otra persona; `ADMIN` y `OWNER`
+pueden hacerlo con cualquier tarea del proyecto.
 
 Las rutas marcadas con auth requieren el header `Authorization: Bearer <access_token>`.
 El refresh token nunca aparece en el cuerpo de una respuesta: viaja unicamente
