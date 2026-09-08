@@ -1,10 +1,15 @@
-# Fase actual: 2 — Roles, permisos e invitaciones
+# Fase actual: 3 — Proyectos y tareas
 
-**Objetivo:** que una organización deje de ser de una sola persona. Roles con
-permisos granulares, gestión de miembros, e invitaciones por correo.
+**Objetivo:** el núcleo del producto. Proyectos dentro de una organización, y
+tareas dentro de un proyecto, con listados serios (paginación por cursor,
+filtros, orden), control de concurrencia y permisos que distinguen lo propio de
+lo ajeno.
 
-**Rama:** `feat/roles-and-invitations`
-**Tag al cerrar:** `v0.3.0`
+**Rama:** `feat/projects-and-tasks`
+**Tag al cerrar:** `v0.4.0`
+
+Comentarios, etiquetas y bitácora de actividad quedan para la Fase 3.5. Esta
+fase ya es la más grande del proyecto; partirla mantiene la calidad.
 
 ---
 
@@ -12,118 +17,128 @@ permisos granulares, gestión de miembros, e invitaciones por correo.
 
 No se discuten. El código debe reflejarlas tal cual.
 
-1. **Cuatro roles fijos, no configurables por el usuario:** `OWNER`, `ADMIN`,
-   `MEMBER`, `VIEWER`. Se guardan como enum en la membresía. No hay creación de
-   roles a medida: es una funcionalidad grande que no aporta a este proyecto.
+1. **Todo cuelga de la organización:**
+   `/v1/organizations/:organizationId/projects` y
+   `/v1/organizations/:organizationId/projects/:projectId/tasks`. La membresía
+   y el rol se resuelven con los middlewares de la Fase 2.
 
-2. **La matriz de permisos vive en el código, no en la base.** Un único módulo
-   tipado mapea rol a lista de permisos. Razón: los permisos cambian con cada
-   despliegue, no en caliente, y una matriz en código se revisa en un Pull
-   Request y se testea. Evita además un join en cada petición.
+2. **Cada proyecto tiene una clave corta** de 2 a 5 letras mayúsculas, única
+   dentro de la organización: `ENG`, `WEB`, `OPS`.
 
-3. **Los permisos se nombran `recurso:accion` y, cuando el alcance importa,
-   `recurso:accion:alcance`.** Ejemplos: `organization:update`,
-   `member:invite`, `member:remove:any`. El sufijo de alcance prepara el
-   terreno para la Fase 3, donde aparece la distinción entre lo propio y lo
-   ajeno.
+3. **Las tareas se numeran por proyecto:** `ENG-1`, `ENG-2`. El número es
+   secuencial dentro del proyecto y no se reutiliza al borrar. Se genera
+   incrementando un contador en la fila del proyecto **dentro de la misma
+   transacción** que crea la tarea, para que dos peticiones simultáneas no
+   obtengan el mismo número.
 
-4. **Toda organización tiene exactamente un OWNER, siempre.** No se puede
-   eliminar al último owner, ni degradarlo, ni puede abandonar la organización.
-   Para salir, primero transfiere la propiedad.
+4. **Bloqueo optimista en las tareas.** Cada tarea tiene un `version` entero
+   que sube en cada modificación. Actualizar exige enviar la versión que se
+   leyó; si no coincide, la respuesta es 409 y el cliente debe recargar. Evita
+   que dos personas editando a la vez se pisen sin enterarse.
 
-5. **Las rutas de organización llevan el id en el path:**
-   `/v1/organizations/:organizationId/...`. La membresía y el rol se resuelven
-   ahí, en cada petición. El access token sigue sin llevar organización, como
-   se decidió en la Fase 1.
+5. **"Propio" significa creada por el usuario o asignada a él.** Es la
+   definición que usa el permiso `task:update:own`. Cualquier otra tarea
+   requiere `task:update:any`.
 
-6. **A un no miembro se le responde 404, nunca 403.** Coherente con la Fase 1:
-   no revelar qué organizaciones existen.
+6. **Paginación por cursor, no por número de página.** Cursor opaco,
+   `limit` de 20 por defecto y 100 como máximo. Todas las listas responden con
+   la misma envoltura: los datos y el cursor siguiente, que es nulo cuando no
+   hay más.
 
-7. **La invitación se identifica con un token opaco**, guardado hasheado, con
-   vencimiento de 7 días, de un solo uso.
+7. **Borrado lógico** en proyectos y tareas, con `deletedAt`, coherente con el
+   resto del sistema. Lo borrado no aparece en los listados.
 
-8. **El envío de correo queda para la Fase 4.** Como la cola no existe todavía,
-   el endpoint de invitación devuelve el enlace en la respuesta. Es una medida
-   temporal y debe quedar marcada como tal en el código y en `docs/DEBT.md`.
+8. **Estados de tarea:** `TODO`, `IN_PROGRESS`, `DONE`, `CANCELLED`.
+   **Prioridades:** `LOW`, `MEDIUM`, `HIGH`, `URGENT`. Al pasar a `DONE` se
+   registra `completedAt`; al salir de `DONE` se limpia.
 
-9. **Una invitación se acepta solo con la cuenta del correo invitado.** Si
-   quien la acepta tiene otro correo, se rechaza. Si el correo invitado no
-   tiene cuenta, la invitación queda pendiente hasta que se registre.
+9. **Solo se puede asignar una tarea a un miembro de la organización.** Asignar
+   a alguien de fuera devuelve 422.
 
-10. **La migración debe rellenar los datos existentes:** todas las membresías
-    creadas en la Fase 1 pasan a `OWNER`, porque son organizaciones personales.
+10. **Los listados no hacen una consulta por elemento.** Traer 20 tareas con su
+    responsable son dos consultas como mucho, nunca veintiuna.
 
 ---
 
 ## Alcance
 
 ### Modelo de datos
-- [ ] Enum de rol y campo `role` en `Membership`, con migración que rellena
-      `OWNER` en las filas existentes
-- [ ] `Invitation`: id, organizationId, email, role, tokenHash, invitedById,
-      expiresAt, acceptedAt, revokedAt, createdAt
-- [ ] Índice único parcial: no puede haber dos invitaciones pendientes para el
-      mismo correo en la misma organización
-- [ ] Índices en tokenHash y en el par organizationId + email
+- [ ] `Project`: id, organizationId, key, name, description, status
+      (`ACTIVE` / `ARCHIVED`), taskCounter, createdById, timestamps, deletedAt
+- [ ] Único: organizationId + key
+- [ ] `Task`: id, projectId, number, title, description, status, priority,
+      assigneeId, createdById, dueDate, completedAt, version, timestamps,
+      deletedAt
+- [ ] Único: projectId + number
+- [ ] Índices pensados para los filtros: projectId + status, assigneeId,
+      dueDate
+- [ ] Migración que no rompe los datos existentes
 
-### Permisos
-- [ ] Módulo de permisos con la matriz rol → permisos, tipada y exportada
-- [ ] Middleware `requireMembership` que resuelve organización, membresía y rol
-      desde el path, y los deja en el contexto de la petición
-- [ ] Middleware `requirePermission` que verifica contra la matriz
-- [ ] El reparto sugerido, ajustable con criterio: `OWNER` todo, incluida
-      eliminar la organización y transferir propiedad; `ADMIN` gestiona
-      miembros e invitaciones y edita la organización; `MEMBER` lee y opera
-      sobre el contenido; `VIEWER` solo lee
+### Permisos nuevos en la matriz
+- [ ] `project:create`, `project:read`, `project:update`, `project:delete`
+- [ ] `task:create`, `task:read`, `task:assign`
+- [ ] `task:update:own`, `task:update:any`
+- [ ] `task:delete:own`, `task:delete:any`
+- [ ] Reparto sugerido, ajustable con criterio: `VIEWER` solo lectura;
+      `MEMBER` crea tareas y modifica las propias; `ADMIN` y `OWNER` gestionan
+      proyectos y cualquier tarea
 
-### Miembros
-- [ ] `GET /v1/organizations/:organizationId/members`
-- [ ] `PATCH /v1/organizations/:organizationId/members/:userId` — cambiar rol
-- [ ] `DELETE /v1/organizations/:organizationId/members/:userId` — expulsar
-- [ ] `DELETE /v1/organizations/:organizationId/members/me` — abandonar
-- [ ] `POST /v1/organizations/:organizationId/transfer-ownership`
+### Proyectos
+- [ ] `POST /v1/organizations/:organizationId/projects`
+- [ ] `GET /v1/organizations/:organizationId/projects` — paginado, filtro por
+      estado
+- [ ] `GET .../projects/:projectId`
+- [ ] `PATCH .../projects/:projectId`
+- [ ] `DELETE .../projects/:projectId` — borrado lógico, arrastra sus tareas
+- [ ] `POST .../projects/:projectId/archive` y `/unarchive`
 
-### Invitaciones
-- [ ] `POST /v1/organizations/:organizationId/invitations` — crear
-- [ ] `GET /v1/organizations/:organizationId/invitations` — listar pendientes
-- [ ] `DELETE /v1/organizations/:organizationId/invitations/:id` — revocar
-- [ ] `GET /v1/invitations/:token` — vista previa: nombre de la organización,
-      quién invita y el rol ofrecido. Sin exponer nada más
-- [ ] `POST /v1/invitations/:token/accept` — aceptar, autenticado
-
-### Organizaciones
-- [ ] `PATCH /v1/organizations/:organizationId` — editar, con permiso
-- [ ] `DELETE /v1/organizations/:organizationId` — solo `OWNER`
+### Tareas
+- [ ] `POST .../projects/:projectId/tasks`
+- [ ] `GET .../projects/:projectId/tasks` — paginado, con filtros por estado,
+      prioridad, responsable, sin responsable, vencimiento antes o después de
+      una fecha, y búsqueda por texto en el título; orden por fecha de
+      creación, vencimiento o prioridad
+- [ ] `GET .../tasks/:taskId`
+- [ ] `PATCH .../tasks/:taskId` — con versión, 409 si no coincide
+- [ ] `DELETE .../tasks/:taskId`
+- [ ] `POST .../tasks/:taskId/assign` y `/unassign`
+- [ ] `GET /v1/organizations/:organizationId/tasks` — todas las tareas de la
+      organización asignadas al usuario, con los mismos filtros
 
 ### Tests
-- [ ] Un test por rol que recorre la matriz completa y comprueba qué puede y
-      qué no puede hacer cada uno
-- [ ] No se puede degradar ni expulsar al último `OWNER`
-- [ ] El `OWNER` no puede abandonar la organización sin transferir antes
-- [ ] Un `ADMIN` no puede modificar a un `OWNER`
-- [ ] Invitación vencida, ya usada y revocada: las tres rechazadas
-- [ ] Aceptar con un correo distinto al invitado es rechazado
-- [ ] Invitar a alguien que ya es miembro devuelve conflicto
-- [ ] Un no miembro recibe 404 en todas las rutas de la organización
-- [ ] Las membresías de la Fase 1 quedan como `OWNER` tras la migración
+- [ ] Dos creaciones simultáneas en el mismo proyecto obtienen números
+      distintos
+- [ ] Actualizar con una versión vieja devuelve 409
+- [ ] Un `MEMBER` modifica su tarea pero no la de otro
+- [ ] Un `MEMBER` modifica una tarea ajena que le fue asignada
+- [ ] Un `VIEWER` no puede crear ni modificar nada
+- [ ] Asignar a alguien que no es miembro devuelve 422
+- [ ] La paginación recorre el conjunto completo sin repetir ni saltarse nada
+- [ ] Cada filtro y cada orden, con su caso
+- [ ] Borrar un proyecto oculta sus tareas
+- [ ] Pasar a `DONE` marca `completedAt`; salir de `DONE` lo limpia
+- [ ] Un no miembro recibe 404 en todas estas rutas
+- [ ] Un test que cuente las consultas de un listado y falle si hay una por
+      elemento
 
 ### Documentación
-- [ ] `docs/adr/0005-permission-matrix.md` — por qué la matriz en código y no
-      en la base
-- [ ] README actualizado con los endpoints y la tabla de roles
-- [ ] `docs/DEBT.md` — anotar que el enlace de invitación se devuelve en la
-      respuesta hasta que exista el envío de correo
+- [ ] `docs/adr/0006-cursor-pagination.md` — por qué cursor y no offset
+- [ ] `docs/adr/0007-optimistic-locking.md` — por qué versión en el cuerpo y no
+      cabecera `If-Match`
+- [ ] README con los endpoints nuevos y ejemplos de filtros
 
 ---
 
 ## Fuera de alcance
 
-- Envío real de correos, cola y worker (Fase 4)
-- Proyectos, tareas, comentarios, etiquetas (Fase 3)
-- Roles a medida definidos por el usuario
-- Permisos por proyecto o por recurso individual
-- Registro de auditoría de cambios de rol
+- Comentarios, etiquetas y bitácora de actividad (Fase 3.5)
+- Adjuntos y subida de archivos
+- Subtareas, dependencias entre tareas, tableros o vistas kanban
+- Orden manual de tareas (arrastrar y soltar)
+- Tareas recurrentes, recordatorios, notificaciones
 - Webhooks y API keys (Fase 4)
+- Búsqueda de texto completo con índices dedicados: basta con una búsqueda
+  simple por título
 
 ---
 
@@ -132,13 +147,12 @@ No se discuten. El código debe reflejarlas tal cual.
 1. Sin archivo `.env`: `pnpm install && pnpm test && pnpm typecheck && pnpm
    lint` pasa entero
 2. `docker compose build api` y `docker compose up -d` dejan todo `healthy`
-3. La migración corre sobre una base con datos de la Fase 1 y las membresías
-   existentes quedan como `OWNER`
-4. Los dos checks del CI en verde en el Pull Request
-5. Recorrido manual: crear organización, invitar a un segundo usuario como
-   `MEMBER`, aceptar, comprobar que ese usuario no puede expulsar a nadie,
-   ascenderlo a `ADMIN`, comprobar que ahora sí puede invitar pero no puede
-   tocar al `OWNER`
+3. Los dos checks del CI en verde en el Pull Request
+4. Recorrido manual: crear proyecto con clave, crear tres tareas y comprobar la
+   numeración correlativa, filtrar por estado y por responsable, recorrer dos
+   páginas con el cursor, provocar un 409 enviando una versión vieja, y
+   comprobar que un `VIEWER` no puede crear
+5. Ningún listado dispara una consulta por elemento
 
 Cumplido eso: Pull Request, checks verdes, merge con commit de merge, y tag
-`v0.3.0`.
+`v0.4.0`.
