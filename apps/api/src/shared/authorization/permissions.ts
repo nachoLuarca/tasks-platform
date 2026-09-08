@@ -35,6 +35,8 @@ export const PERMISSIONS = [
   'comment:delete:own',
   'comment:delete:any',
   'label:manage',
+  'webhook:manage',
+  'apikey:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -85,6 +87,17 @@ export type Permission = (typeof PERMISSIONS)[number];
  *   follows `task:update:own`/`task:update:any` instead, same as changing a
  *   task's title. Reading the label catalog reuses `task:read` for the same
  *   reason as above.
+ * - `webhook:manage` / `apikey:manage` (Phase 4) are ADMIN/OWNER only, per
+ *   PHASE.md's explicit "Permisos nuevos" list for this phase -- managing the
+ *   organization's integration surface (who else can call in, who else gets
+ *   called out to) is a management action, not day-to-day content work, same
+ *   category as `project:create`/`task:assign`. Note that these two gate the
+ *   *human* (role-based) path only: an API key's own scopes are checked
+ *   separately, against `API_KEY_ALLOWED_PERMISSIONS` in
+ *   shared/authorization/api-key-scopes.ts, and never include either of
+ *   these two -- a key managing other keys or other webhooks would be a
+ *   self-referential privilege-escalation path with no legitimate use case
+ *   this phase needs to support.
  */
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   OWNER: [
@@ -114,6 +127,8 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'comment:delete:own',
     'comment:delete:any',
     'label:manage',
+    'webhook:manage',
+    'apikey:manage',
   ],
   ADMIN: [
     'organization:update',
@@ -140,6 +155,8 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'comment:delete:own',
     'comment:delete:any',
     'label:manage',
+    'webhook:manage',
+    'apikey:manage',
   ],
   MEMBER: [
     'member:list',

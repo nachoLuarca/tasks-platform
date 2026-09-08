@@ -12,3 +12,5 @@ export * from './tasks.schema.js';
 export * from './comments.schema.js';
 export * from './labels.schema.js';
 export * from './activity.schema.js';
+export * from './webhooks.schema.js';
+export * from './api-keys.schema.js';

@@ -1,25 +1,19 @@
 import type { RequestHandler } from 'express';
 
-import type { CommentListQuery, CreateCommentRequest, Role, UpdateCommentRequest } from '@tasks-platform/contracts';
+import type { CommentListQuery, CreateCommentRequest, UpdateCommentRequest } from '@tasks-platform/contracts';
 
+import { requireRole, requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import type { TaskEntity } from '../tasks/tasks.types.js';
 import { toCommentResponse } from './comments.mapper.js';
 import { commentsService } from './comments.service.js';
 import type { CommentEntity } from './comments.types.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
-
-function getMembershipRole(req: { membership?: { role: Role } }): Role {
+function getOrganizationId(req: { membership?: { organizationId: string } }): string {
   if (!req.membership) {
     throw new UnauthorizedError('Missing membership context');
   }
-  return req.membership.role;
+  return req.membership.organizationId;
 }
 
 function getTask(req: { task?: TaskEntity }): TaskEntity {
@@ -39,10 +33,11 @@ function getComment(req: { comment?: CommentEntity }): CommentEntity {
 export const commentsController = {
   create: (async (req, res) => {
     const task = getTask(req);
-    const authorId = getAuthenticatedUserId(req);
+    const organizationId = getOrganizationId(req);
+    const authorId = requireUserId(req);
     const body = req.body as CreateCommentRequest;
 
-    const comment = await commentsService.create(task.id, authorId, body.body);
+    const comment = await commentsService.create(task.id, organizationId, authorId, body.body);
     res.status(201).json(toCommentResponse(comment));
   }) satisfies RequestHandler,
 
@@ -56,7 +51,7 @@ export const commentsController = {
 
   update: (async (req, res) => {
     const comment = getComment(req);
-    const actorId = getAuthenticatedUserId(req);
+    const actorId = requireUserId(req);
     const body = req.body as UpdateCommentRequest;
 
     const updated = await commentsService.update(comment, actorId, body.body);
@@ -65,8 +60,8 @@ export const commentsController = {
 
   remove: (async (req, res) => {
     const comment = getComment(req);
-    const role = getMembershipRole(req);
-    const actorId = getAuthenticatedUserId(req);
+    const role = requireRole(req);
+    const actorId = requireUserId(req);
 
     await commentsService.remove(comment, role, actorId);
     res.status(204).send();

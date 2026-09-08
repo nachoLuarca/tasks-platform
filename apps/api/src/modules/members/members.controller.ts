@@ -2,20 +2,16 @@ import type { RequestHandler } from 'express';
 
 import type { TransferOwnershipRequest, UpdateMemberRoleRequest } from '@tasks-platform/contracts';
 
+import { requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { toMemberResponse } from './members.mapper.js';
 import { membersService } from './members.service.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
+const getAuthenticatedUserId = requireUserId;
 
 function getMembershipContext(req: {
-  membership?: { organizationId: string; membershipId: string; role: string };
-}): { organizationId: string; membershipId: string; role: string } {
+  membership?: { organizationId: string; membershipId: string | null; role: string | null };
+}): { organizationId: string; membershipId: string | null; role: string | null } {
   if (!req.membership) {
     throw new UnauthorizedError('Missing membership context');
   }
@@ -60,6 +56,9 @@ export const membersController = {
 
   transferOwnership: (async (req, res) => {
     const { organizationId, membershipId } = getMembershipContext(req);
+    if (!membershipId) {
+      throw new UnauthorizedError('This action requires a user, not an API key');
+    }
     const body = req.body as TransferOwnershipRequest;
 
     await membersService.transferOwnership(organizationId, membershipId, body.userId);

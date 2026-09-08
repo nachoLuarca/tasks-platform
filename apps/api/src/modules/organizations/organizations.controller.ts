@@ -2,16 +2,11 @@ import type { RequestHandler } from 'express';
 
 import type { CreateOrganizationRequest, UpdateOrganizationRequest } from '@tasks-platform/contracts';
 
-import { UnauthorizedError } from '../../shared/errors/index.js';
+import { requireUserId } from '../../shared/authorization/index.js';
 import { toOrganizationResponse } from './organizations.mapper.js';
 import { organizationsService } from './organizations.service.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
+const getAuthenticatedUserId = requireUserId;
 
 export const organizationsController = {
   create: (async (req, res) => {
