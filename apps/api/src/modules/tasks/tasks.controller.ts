@@ -65,7 +65,7 @@ export const tasksController = {
     res.status(200).json({ data: page.data.map(toTaskResponse), nextCursor: page.nextCursor });
   }) satisfies RequestHandler,
 
-  getById: (async (req, res) => {
+  getById: ((req, res) => {
     const task = getTask(req);
     res.status(200).json(toTaskResponse(task));
   }) satisfies RequestHandler,

@@ -46,7 +46,7 @@ export const projectsController = {
     res.status(200).json({ data: page.data.map(toProjectResponse), nextCursor: page.nextCursor });
   }) satisfies RequestHandler,
 
-  getById: (async (req, res) => {
+  getById: ((req, res) => {
     const project = getProject(req);
     res.status(200).json(toProjectResponse(project));
   }) satisfies RequestHandler,
