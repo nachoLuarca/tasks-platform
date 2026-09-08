@@ -1,38 +1,11 @@
-import pino from 'pino';
+import { createLogger } from '@tasks-platform/shared';
 
-import { config } from '../config/index.js';
 import { getRequestId } from './request-context.js';
 
-export const logger = pino({
-  level: config.logLevel,
-  // Injects the current requestId (if any) into every log line without the
-  // caller having to pass it explicitly.
+/** Same base setup (level, redaction, pretty-printing) as every other process, plus the api's own requestId mixin. See packages/shared/src/logger/logger.ts. */
+export const logger = createLogger({
   mixin() {
     const requestId = getRequestId();
     return requestId ? { requestId } : {};
   },
-  redact: {
-    paths: [
-      'req.headers.authorization',
-      'req.headers.cookie',
-      'res.headers["set-cookie"]',
-      'req.body',
-      '*.password',
-      '*.token',
-      '*.accessToken',
-      '*.refreshToken',
-      '*.passwordHash',
-    ],
-    remove: true,
-  },
-  transport: config.isDevelopment
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'HH:MM:ss',
-          ignore: 'pid,hostname',
-        },
-      }
-    : undefined,
 });

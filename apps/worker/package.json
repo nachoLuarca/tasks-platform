@@ -3,6 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Consumidor de la cola. Sin logica aun: se implementa en una fase posterior.",
-  "scripts": {}
+  "main": "./dist/index.js",
+  "description": "Despachador de outbox, entrega de webhooks y envio de correo, fuera de la peticion HTTP.",
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file=../../.env dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "@tasks-platform/contracts": "workspace:*",
+    "@tasks-platform/shared": "workspace:*",
+    "bullmq": "^5.34.4",
+    "nodemailer": "^6.9.16"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
 }

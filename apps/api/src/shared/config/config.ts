@@ -1,9 +1,14 @@
+import { sharedConfig } from '@tasks-platform/shared';
+
 import { envSchema } from './env.schema.js';
 
 /**
- * This is the only module allowed to read `process.env` directly. Everything
- * else must import `config` from here so the app has a single, validated
- * source of truth for its settings.
+ * This is the only module allowed to read `process.env` directly for
+ * API-only settings. `sharedConfig` (packages/shared) already validated the
+ * settings every process needs (db, redis, nodeEnv, logLevel, ...) -- this
+ * just adds the api's own on top, so the rest of the codebase keeps
+ * importing a single `config` object with everything it needs, unaware that
+ * part of it now comes from a shared package.
  */
 function loadConfig() {
   const result = envSchema.safeParse(process.env);
@@ -20,23 +25,20 @@ function loadConfig() {
   const env = result.data;
 
   return Object.freeze({
-    nodeEnv: env.NODE_ENV,
-    isProduction: env.NODE_ENV === 'production',
-    isDevelopment: env.NODE_ENV === 'development',
-    isTest: env.NODE_ENV === 'test',
+    nodeEnv: sharedConfig.nodeEnv,
+    isProduction: sharedConfig.isProduction,
+    isDevelopment: sharedConfig.isDevelopment,
+    isTest: sharedConfig.isTest,
     port: env.PORT,
-    logLevel: env.LOG_LEVEL,
+    logLevel: sharedConfig.logLevel,
+    appPublicUrl: sharedConfig.appPublicUrl,
     cors: Object.freeze({
       origin: env.CORS_ORIGIN,
     }),
     bodyLimit: env.BODY_LIMIT,
     shutdownTimeoutMs: env.SHUTDOWN_TIMEOUT_MS,
-    database: Object.freeze({
-      url: env.DATABASE_URL,
-    }),
-    redis: Object.freeze({
-      url: env.REDIS_URL,
-    }),
+    database: sharedConfig.database,
+    redis: sharedConfig.redis,
     auth: Object.freeze({
       jwtSecret: env.JWT_SECRET,
       cookieSameSite: env.COOKIE_SAME_SITE,

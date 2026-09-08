@@ -20,7 +20,9 @@
   "dependencies": {
     "@prisma/client": "^6.1.0",
     "@tasks-platform/contracts": "workspace:*",
+    "@tasks-platform/shared": "workspace:*",
     "argon2": "^0.41.1",
+    "bullmq": "^5.34.4",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "express": "^5.0.1",

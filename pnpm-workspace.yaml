@@ -7,6 +7,7 @@ onlyBuiltDependencies:
   - '@prisma/engines'
   - 'argon2'
   - 'esbuild'
+  - 'msgpackr-extract'
   - 'prisma'
 
 allowBuilds:
@@ -14,4 +15,5 @@ allowBuilds:
   '@prisma/engines': true
   argon2: true
   esbuild: true
+  msgpackr-extract: true
   prisma: true
