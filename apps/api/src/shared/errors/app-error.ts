@@ -77,6 +77,17 @@ export class ConflictError extends AppError {
   }
 }
 
+export class UnprocessableEntityError extends AppError {
+  constructor(detail?: string) {
+    super({
+      status: 422,
+      type: 'https://tasks-platform.dev/errors/unprocessable-entity',
+      title: 'Unprocessable Entity',
+      detail,
+    });
+  }
+}
+
 export class TooManyRequestsError extends AppError {
   public readonly retryAfterSeconds: number;
 

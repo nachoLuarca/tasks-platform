@@ -48,6 +48,7 @@ export const taskResponseSchema = z.object({
   status: taskStatusSchema,
   priority: taskPrioritySchema,
   assigneeId: z.string().uuid().nullable(),
+  assignee: z.object({ id: z.string().uuid(), name: z.string(), email: z.string() }).nullable(),
   createdById: z.string().uuid(),
   dueDate: z.string().datetime().nullable(),
   completedAt: z.string().datetime().nullable(),
