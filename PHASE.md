@@ -1,158 +1,150 @@
-# Fase actual: 3 — Proyectos y tareas
+# Fase actual: 3.5 — Comentarios, etiquetas y bitácora
 
-**Objetivo:** el núcleo del producto. Proyectos dentro de una organización, y
-tareas dentro de un proyecto, con listados serios (paginación por cursor,
-filtros, orden), control de concurrencia y permisos que distinguen lo propio de
-lo ajeno.
+**Objetivo:** cerrar el dominio. Conversación sobre las tareas, clasificación
+con etiquetas reutilizables, y un registro de qué pasó con cada tarea y quién
+lo hizo.
 
-**Rama:** `feat/projects-and-tasks`
-**Tag al cerrar:** `v0.4.0`
+**Rama:** `feat/comments-labels-activity`
+**Tag al cerrar:** `v0.5.0`
 
-Comentarios, etiquetas y bitácora de actividad quedan para la Fase 3.5. Esta
-fase ya es la más grande del proyecto; partirla mantiene la calidad.
+Fase más corta que la 3. La bitácora de actividad es la pieza que prepara los
+webhooks de la Fase 4: cada entrada registrada aquí será después un evento
+publicable.
 
 ---
 
 ## Decisiones ya tomadas
 
-No se discuten. El código debe reflejarlas tal cual.
+1. **Nadie edita el comentario de otro.** Ni el `OWNER`. Un comentario es la voz
+   de quien lo escribió y alterarla no tiene justificación. Borrarlo sí puede
+   hacerlo un `ADMIN` u `OWNER`, porque moderar es distinto de reescribir.
 
-1. **Todo cuelga de la organización:**
-   `/v1/organizations/:organizationId/projects` y
-   `/v1/organizations/:organizationId/projects/:projectId/tasks`. La membresía
-   y el rol se resuelven con los middlewares de la Fase 2.
+2. **Los comentarios se editan, no se reescriben en silencio.** Al modificar
+   uno se registra `editedAt`, y la respuesta lo expone para que un cliente
+   pueda mostrar que fue editado.
 
-2. **Cada proyecto tiene una clave corta** de 2 a 5 letras mayúsculas, única
-   dentro de la organización: `ENG`, `WEB`, `OPS`.
+3. **Las etiquetas pertenecen a la organización, no al proyecto.** Se
+   reutilizan entre proyectos. Nombre único por organización, sin distinguir
+   mayúsculas, y color en formato hexadecimal.
 
-3. **Las tareas se numeran por proyecto:** `ENG-1`, `ENG-2`. El número es
-   secuencial dentro del proyecto y no se reutiliza al borrar. Se genera
-   incrementando un contador en la fila del proyecto **dentro de la misma
-   transacción** que crea la tarea, para que dos peticiones simultáneas no
-   obtengan el mismo número.
+4. **Aplicar una etiqueta a una tarea es modificar la tarea.** No requiere
+   permiso propio: se rige por `task:update:own` o `task:update:any`, igual que
+   cambiar el título. Crear, renombrar y borrar etiquetas sí es
+   `label:manage`.
 
-4. **Bloqueo optimista en las tareas.** Cada tarea tiene un `version` entero
-   que sube en cada modificación. Actualizar exige enviar la versión que se
-   leyó; si no coincide, la respuesta es 409 y el cliente debe recargar. Evita
-   que dos personas editando a la vez se pisen sin enterarse.
+5. **Se agrega `task:assign:self`.** Un `MEMBER` puede tomar una tarea sin
+   responsable y soltarla, pero no puede asignársela a otra persona. Corrige la
+   restricción de la Fase 3, donde un `MEMBER` no podía siquiera tomar trabajo.
 
-5. **"Propio" significa creada por el usuario o asignada a él.** Es la
-   definición que usa el permiso `task:update:own`. Cualquier otra tarea
-   requiere `task:update:any`.
+6. **La bitácora se escribe en la misma transacción que el cambio.** Si la
+   modificación falla y se revierte, no queda una entrada mintiendo sobre algo
+   que nunca pasó.
 
-6. **Paginación por cursor, no por número de página.** Cursor opaco,
-   `limit` de 20 por defecto y 100 como máximo. Todas las listas responden con
-   la misma envoltura: los datos y el cursor siguiente, que es nulo cuando no
-   hay más.
+7. **La bitácora es de solo lectura.** No hay endpoint para crear, editar ni
+   borrar entradas. Se genera sola.
 
-7. **Borrado lógico** en proyectos y tareas, con `deletedAt`, coherente con el
-   resto del sistema. Lo borrado no aparece en los listados.
+8. **Cada entrada guarda el antes y el después** en un campo estructurado. Un
+   cambio de estado registra de qué valor a qué valor, no solo que "cambió el
+   estado".
 
-8. **Estados de tarea:** `TODO`, `IN_PROGRESS`, `DONE`, `CANCELLED`.
-   **Prioridades:** `LOW`, `MEDIUM`, `HIGH`, `URGENT`. Al pasar a `DONE` se
-   registra `completedAt`; al salir de `DONE` se limpia.
-
-9. **Solo se puede asignar una tarea a un miembro de la organización.** Asignar
-   a alguien de fuera devuelve 422.
-
-10. **Los listados no hacen una consulta por elemento.** Traer 20 tareas con su
-    responsable son dos consultas como mucho, nunca veintiuna.
+9. **Borrar una tarea o un comentario es lógico**, coherente con el resto. Un
+   comentario borrado desaparece del listado pero su entrada en la bitácora
+   permanece.
 
 ---
 
 ## Alcance
 
 ### Modelo de datos
-- [ ] `Project`: id, organizationId, key, name, description, status
-      (`ACTIVE` / `ARCHIVED`), taskCounter, createdById, timestamps, deletedAt
-- [ ] Único: organizationId + key
-- [ ] `Task`: id, projectId, number, title, description, status, priority,
-      assigneeId, createdById, dueDate, completedAt, version, timestamps,
-      deletedAt
-- [ ] Único: projectId + number
-- [ ] Índices pensados para los filtros: projectId + status, assigneeId,
-      dueDate
-- [ ] Migración que no rompe los datos existentes
+- [ ] `Comment`: id, taskId, authorId, body, editedAt, timestamps, deletedAt
+- [ ] `Label`: id, organizationId, name, color, timestamps. Único por
+      organización sin distinguir mayúsculas
+- [ ] `TaskLabel`: relación tarea-etiqueta, única por par
+- [ ] `TaskActivity`: id, taskId, actorId, type, changes (estructurado),
+      createdAt
+- [ ] Índices para los listados: taskId con createdAt en comentarios y
+      bitácora
 
-### Permisos nuevos en la matriz
-- [ ] `project:create`, `project:read`, `project:update`, `project:delete`
-- [ ] `task:create`, `task:read`, `task:assign`
-- [ ] `task:update:own`, `task:update:any`
-- [ ] `task:delete:own`, `task:delete:any`
-- [ ] Reparto sugerido, ajustable con criterio: `VIEWER` solo lectura;
-      `MEMBER` crea tareas y modifica las propias; `ADMIN` y `OWNER` gestionan
-      proyectos y cualquier tarea
+### Permisos nuevos
+- [ ] `comment:create`, `comment:update:own`, `comment:delete:own`,
+      `comment:delete:any`
+- [ ] `label:manage`
+- [ ] `task:assign:self`
+- [ ] Reparto sugerido: `VIEWER` solo lee comentarios y bitácora; `MEMBER`
+      comenta, edita y borra los suyos, y se asigna tareas libres; `ADMIN` y
+      `OWNER` además gestionan etiquetas y borran cualquier comentario
 
-### Proyectos
-- [ ] `POST /v1/organizations/:organizationId/projects`
-- [ ] `GET /v1/organizations/:organizationId/projects` — paginado, filtro por
-      estado
-- [ ] `GET .../projects/:projectId`
-- [ ] `PATCH .../projects/:projectId`
-- [ ] `DELETE .../projects/:projectId` — borrado lógico, arrastra sus tareas
-- [ ] `POST .../projects/:projectId/archive` y `/unarchive`
+### Comentarios
+- [ ] `POST .../tasks/:taskId/comments`
+- [ ] `GET .../tasks/:taskId/comments` — paginado, orden cronológico
+- [ ] `PATCH .../comments/:commentId` — solo el autor
+- [ ] `DELETE .../comments/:commentId`
 
-### Tareas
-- [ ] `POST .../projects/:projectId/tasks`
-- [ ] `GET .../projects/:projectId/tasks` — paginado, con filtros por estado,
-      prioridad, responsable, sin responsable, vencimiento antes o después de
-      una fecha, y búsqueda por texto en el título; orden por fecha de
-      creación, vencimiento o prioridad
-- [ ] `GET .../tasks/:taskId`
-- [ ] `PATCH .../tasks/:taskId` — con versión, 409 si no coincide
-- [ ] `DELETE .../tasks/:taskId`
-- [ ] `POST .../tasks/:taskId/assign` y `/unassign`
-- [ ] `GET /v1/organizations/:organizationId/tasks` — todas las tareas de la
-      organización asignadas al usuario, con los mismos filtros
+### Etiquetas
+- [ ] `POST /v1/organizations/:organizationId/labels`
+- [ ] `GET /v1/organizations/:organizationId/labels`
+- [ ] `PATCH .../labels/:labelId`
+- [ ] `DELETE .../labels/:labelId` — se quita de todas las tareas que la usaban
+- [ ] `PUT .../tasks/:taskId/labels` — fija el conjunto completo de etiquetas
+      de la tarea de una vez
+- [ ] Filtro por etiqueta en el listado de tareas de la Fase 3
+
+### Bitácora
+- [ ] Se registra al crear una tarea, y al cambiar estado, prioridad,
+      responsable, fecha de vencimiento, título y etiquetas
+- [ ] Se registra al comentar
+- [ ] `GET .../tasks/:taskId/activity` — paginado, del más reciente al más
+      antiguo
+- [ ] La entrada incluye quién, cuándo, qué cambió, y de qué valor a cuál
 
 ### Tests
-- [ ] Dos creaciones simultáneas en el mismo proyecto obtienen números
-      distintos
-- [ ] Actualizar con una versión vieja devuelve 409
-- [ ] Un `MEMBER` modifica su tarea pero no la de otro
-- [ ] Un `MEMBER` modifica una tarea ajena que le fue asignada
-- [ ] Un `VIEWER` no puede crear ni modificar nada
-- [ ] Asignar a alguien que no es miembro devuelve 422
-- [ ] La paginación recorre el conjunto completo sin repetir ni saltarse nada
-- [ ] Cada filtro y cada orden, con su caso
-- [ ] Borrar un proyecto oculta sus tareas
-- [ ] Pasar a `DONE` marca `completedAt`; salir de `DONE` lo limpia
+- [ ] El autor edita su comentario; nadie más puede, ni el `OWNER`
+- [ ] Un `ADMIN` borra el comentario de otro; un `MEMBER` no
+- [ ] Dos etiquetas con el mismo nombre en distinto uso de mayúsculas chocan
+- [ ] La misma etiqueta puede existir en dos organizaciones distintas
+- [ ] Borrar una etiqueta la quita de las tareas sin borrarlas
+- [ ] Un `MEMBER` toma una tarea sin responsable, pero no puede asignársela a
+      otro
+- [ ] Cambiar el estado deja una entrada con el valor anterior y el nuevo
+- [ ] **Si la actualización de la tarea falla, no queda entrada en la
+      bitácora**
+- [ ] La bitácora no expone endpoints de escritura
+- [ ] Listar comentarios con sus autores no dispara una consulta por
+      comentario
+- [ ] Filtrar tareas por etiqueta devuelve las correctas
 - [ ] Un no miembro recibe 404 en todas estas rutas
-- [ ] Un test que cuente las consultas de un listado y falle si hay una por
-      elemento
 
 ### Documentación
-- [ ] `docs/adr/0006-cursor-pagination.md` — por qué cursor y no offset
-- [ ] `docs/adr/0007-optimistic-locking.md` — por qué versión en el cuerpo y no
-      cabecera `If-Match`
-- [ ] README con los endpoints nuevos y ejemplos de filtros
+- [ ] `docs/adr/0008-activity-log.md` — por qué la bitácora se escribe en la
+      misma transacción, y cómo se conecta con los webhooks de la Fase 4
+- [ ] README con los endpoints nuevos
+- [ ] `docs/DEBT.md` revisado
 
 ---
 
 ## Fuera de alcance
 
-- Comentarios, etiquetas y bitácora de actividad (Fase 3.5)
-- Adjuntos y subida de archivos
-- Subtareas, dependencias entre tareas, tableros o vistas kanban
-- Orden manual de tareas (arrastrar y soltar)
-- Tareas recurrentes, recordatorios, notificaciones
+- Menciones a usuarios en comentarios y sus notificaciones
+- Reacciones a comentarios, hilos o respuestas anidadas
+- Adjuntos en comentarios
+- Bitácora a nivel de proyecto u organización: por ahora solo de tarea
 - Webhooks y API keys (Fase 4)
-- Búsqueda de texto completo con índices dedicados: basta con una búsqueda
-  simple por título
+- Envío de correos (Fase 4)
 
 ---
 
 ## Criterio de cierre
 
-1. Sin archivo `.env`: `pnpm install && pnpm test && pnpm typecheck && pnpm
-   lint` pasa entero
-2. `docker compose build api` y `docker compose up -d` dejan todo `healthy`
+1. Sin archivo `.env`, con el stack levantado:
+   `pnpm install && pnpm test && pnpm typecheck && pnpm lint` pasa entero
+2. `docker compose build api` y `docker compose up -d --force-recreate -V api`
+   dejan todo `healthy`
 3. Los dos checks del CI en verde en el Pull Request
-4. Recorrido manual: crear proyecto con clave, crear tres tareas y comprobar la
-   numeración correlativa, filtrar por estado y por responsable, recorrer dos
-   páginas con el cursor, provocar un 409 enviando una versión vieja, y
-   comprobar que un `VIEWER` no puede crear
+4. Recorrido manual: crear tarea, comentarla, editar el comentario y ver
+   `editedAt`, crear dos etiquetas y aplicarlas, filtrar tareas por etiqueta,
+   cambiar estado y prioridad, y consultar la bitácora viendo cada cambio con
+   su valor anterior
 5. Ningún listado dispara una consulta por elemento
 
 Cumplido eso: Pull Request, checks verdes, merge con commit de merge, y tag
-`v0.4.0`.
+`v0.5.0`.
