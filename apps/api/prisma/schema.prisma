@@ -24,8 +24,10 @@ model User {
   refreshTokens    RefreshToken[]
   invitationsSent  Invitation[]
   projectsCreated  Project[]
-  tasksCreated     Task[]       @relation("TaskCreator")
-  tasksAssigned    Task[]       @relation("TaskAssignee")
+  tasksCreated     Task[]         @relation("TaskCreator")
+  tasksAssigned    Task[]         @relation("TaskAssignee")
+  comments         Comment[]
+  taskActivities   TaskActivity[]
 }
 
 model Organization {
@@ -39,6 +41,7 @@ model Organization {
   memberships Membership[]
   invitations Invitation[]
   projects    Project[]
+  labels      Label[]
 }
 
 enum Role {
@@ -174,12 +177,102 @@ model Task {
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
 
-  project   Project @relation(fields: [projectId], references: [id])
-  assignee  User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  createdBy User    @relation("TaskCreator", fields: [createdById], references: [id])
+  project    Project        @relation(fields: [projectId], references: [id])
+  assignee   User?          @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy  User           @relation("TaskCreator", fields: [createdById], references: [id])
+  comments   Comment[]
+  taskLabels TaskLabel[]
+  activities TaskActivity[]
 
   @@unique([projectId, number])
   @@index([projectId, status])
   @@index([assigneeId])
   @@index([dueDate])
+}
+
+// Soft-deleted so a removed comment disappears from the thread while its
+// TaskActivity "commented" entry (which never references the Comment row)
+// stays in the log, per PHASE.md decision 9.
+model Comment {
+  id        String    @id @default(uuid())
+  taskId    String
+  authorId  String
+  body      String
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  task   Task @relation(fields: [taskId], references: [id])
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+// Belongs to the organization, not the project, so the same label is
+// reusable across every project in it (PHASE.md decision 3). Uniqueness is
+// case-insensitive, which Prisma's schema language can't express as a plain
+// `@@unique` (that would be case-sensitive) -- the actual constraint is a
+// functional unique index on (organizationId, LOWER(name)), hand-written in
+// the migration SQL, same approach as Invitation's partial unique index.
+// There's no `deletedAt`: PHASE.md's data model for Label lists no soft
+// delete, and "deleting" a label only needs to drop its TaskLabel rows
+// without deleting the tasks it was attached to -- a hard delete of the
+// Label row (cascading only the join rows) already does that.
+model Label {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  color          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  taskLabels   TaskLabel[]
+
+  @@index([organizationId])
+}
+
+model TaskLabel {
+  taskId    String
+  labelId   String
+  createdAt DateTime @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id])
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+  @@index([labelId])
+}
+
+// One row per change PHASE.md asks to track: task creation, and a change to
+// status / priority / assignee / due date / title / labels, or a new
+// comment. `type` names the *kind* of change (mirrors an eventual webhook
+// event name -- see docs/adr/0008-activity-log.md); `changes` is always
+// `{ before, after }` for that one field, never a bag of every field on the
+// task. Written inside the same transaction as the change it describes (see
+// activity.service.ts) so a rolled-back operation leaves no entry.
+enum TaskActivityType {
+  TASK_CREATED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  ASSIGNEE_CHANGED
+  DUE_DATE_CHANGED
+  TITLE_CHANGED
+  LABELS_CHANGED
+  COMMENT_ADDED
+}
+
+model TaskActivity {
+  id        String           @id @default(uuid())
+  taskId    String
+  actorId   String
+  type      TaskActivityType
+  changes   Json
+  createdAt DateTime         @default(now())
+
+  task  Task @relation(fields: [taskId], references: [id])
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
 }

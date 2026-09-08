@@ -29,6 +29,12 @@ export const PERMISSIONS = [
   'task:update:any',
   'task:delete:own',
   'task:delete:any',
+  'task:assign:self',
+  'comment:create',
+  'comment:update:own',
+  'comment:delete:own',
+  'comment:delete:any',
+  'label:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -58,6 +64,27 @@ export type Permission = (typeof PERMISSIONS)[number];
  *   with an actor/object ownership check in tasks.service.ts ("own" = creator
  *   or assignee of *that* task); the matrix only says which roles get which
  *   *scope* of permission, never which specific row that resolves to.
+ * - `task:assign:self` (Phase 3.5) is granted to MEMBER alongside the
+ *   existing `task:assign`-less state: a MEMBER can claim an unassigned task
+ *   or drop one they hold, but not reassign anyone else's task. ADMIN/OWNER
+ *   keep the unrestricted `task:assign` from Phase 3, which already covers
+ *   self-assignment too, so they don't need the `:self` grant on top of it.
+ * - There is no `comment:update:any`. PHASE.md is explicit that nobody edits
+ *   another person's comment, not even OWNER, so the matrix simply has no
+ *   permission row that would grant it -- comments.service.ts enforces
+ *   author-only editing as a plain actor/author equality check, independent
+ *   of role, rather than through `canActOnResource`.
+ * - No separate `comment:read` / `activity:read` permission exists. PHASE.md's
+ *   own list of new Phase 3.5 permissions doesn't include either one, and
+ *   reading a task's comments or activity log is part of reading that task,
+ *   so both routes are gated by the existing `task:read` instead of adding
+ *   permissions PHASE.md never asked for.
+ * - `label:manage` gates creating, renaming and deleting labels themselves
+ *   (ADMIN/OWNER only, org-wide). Attaching/detaching labels on one task is
+ *   *not* gated by `label:manage` -- PHASE.md decision 4 is explicit that it
+ *   follows `task:update:own`/`task:update:any` instead, same as changing a
+ *   task's title. Reading the label catalog reuses `task:read` for the same
+ *   reason as above.
  */
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   OWNER: [
@@ -82,6 +109,11 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'task:update:any',
     'task:delete:own',
     'task:delete:any',
+    'comment:create',
+    'comment:update:own',
+    'comment:delete:own',
+    'comment:delete:any',
+    'label:manage',
   ],
   ADMIN: [
     'organization:update',
@@ -103,6 +135,11 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'task:update:any',
     'task:delete:own',
     'task:delete:any',
+    'comment:create',
+    'comment:update:own',
+    'comment:delete:own',
+    'comment:delete:any',
+    'label:manage',
   ],
   MEMBER: [
     'member:list',
@@ -112,6 +149,10 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'task:read',
     'task:update:own',
     'task:delete:own',
+    'task:assign:self',
+    'comment:create',
+    'comment:update:own',
+    'comment:delete:own',
   ],
   VIEWER: ['member:list', 'member:leave', 'project:read', 'task:read'],
 };

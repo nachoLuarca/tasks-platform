@@ -2,6 +2,8 @@ import 'node:http';
 
 import type { Role } from '@tasks-platform/contracts';
 
+import type { CommentEntity } from '../../modules/comments/comments.types.js';
+import type { LabelEntity } from '../../modules/labels/labels.types.js';
 import type { ProjectEntity } from '../../modules/projects/projects.types.js';
 import type { TaskEntity } from '../../modules/tasks/tasks.types.js';
 
@@ -15,6 +17,10 @@ declare module 'node:http' {
     project?: ProjectEntity;
     /** Set by `requireTask` once `:taskId` is resolved and confirmed to belong to the project. */
     task?: TaskEntity;
+    /** Set by `requireComment` once `:commentId` is resolved and confirmed to belong to the task. */
+    comment?: CommentEntity;
+    /** Set by `requireLabel` once `:labelId` is resolved and confirmed to belong to the organization. */
+    label?: LabelEntity;
   }
 }
 

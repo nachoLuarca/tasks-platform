@@ -4,7 +4,11 @@ import { prisma } from '../../src/shared/db/index.js';
 export async function resetDatabase(): Promise<void> {
   await prisma.refreshToken.deleteMany();
   await prisma.invitation.deleteMany();
+  await prisma.taskActivity.deleteMany();
+  await prisma.comment.deleteMany();
+  await prisma.taskLabel.deleteMany();
   await prisma.task.deleteMany();
+  await prisma.label.deleteMany();
   await prisma.project.deleteMany();
   await prisma.membership.deleteMany();
   await prisma.organization.deleteMany();

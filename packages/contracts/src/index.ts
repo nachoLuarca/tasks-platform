@@ -9,3 +9,6 @@ export * from './invitations.schema.js';
 export * from './pagination.schema.js';
 export * from './projects.schema.js';
 export * from './tasks.schema.js';
+export * from './comments.schema.js';
+export * from './labels.schema.js';
+export * from './activity.schema.js';

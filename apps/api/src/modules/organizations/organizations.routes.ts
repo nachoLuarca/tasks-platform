@@ -12,6 +12,7 @@ import { requireAuth } from '../auth/require-auth.middleware.js';
 import { membersController } from '../members/members.controller.js';
 import { membersRouter } from '../members/members.routes.js';
 import { organizationInvitationsRouter } from '../invitations/invitations.routes.js';
+import { labelsRouter } from '../labels/labels.routes.js';
 import { projectsRouter } from '../projects/projects.routes.js';
 import { organizationTasksRouter } from '../tasks/tasks.routes.js';
 import { organizationsController } from './organizations.controller.js';
@@ -56,3 +57,4 @@ organizationsRouter.use('/:organizationId/members', requireMembership, membersRo
 organizationsRouter.use('/:organizationId/invitations', requireMembership, organizationInvitationsRouter);
 organizationsRouter.use('/:organizationId/projects', requireMembership, projectsRouter);
 organizationsRouter.use('/:organizationId/tasks', requireMembership, organizationTasksRouter);
+organizationsRouter.use('/:organizationId/labels', requireMembership, labelsRouter);
