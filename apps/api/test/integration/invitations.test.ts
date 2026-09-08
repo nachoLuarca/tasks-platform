@@ -81,7 +81,7 @@ describe('invitations', () => {
 
   it('shows a public preview with only organization, inviter and role', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
-    const created = await createInvitation(accessToken, organizationId, invitee.email, 'ADMIN');
+    await createInvitation(accessToken, organizationId, invitee.email, 'ADMIN');
     const token = await getInvitationToken(invitee.email);
 
     const response = await request(app).get(`/v1/invitations/${token}`);
@@ -101,7 +101,7 @@ describe('invitations', () => {
 
   it('accepts an invitation with the matching account and grants the offered role', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
-    const created = await createInvitation(accessToken, organizationId, invitee.email, 'MEMBER');
+    await createInvitation(accessToken, organizationId, invitee.email, 'MEMBER');
     const token = await getInvitationToken(invitee.email);
 
     const inviteeSession = await registerAndGetSession(app, invitee);
@@ -121,7 +121,7 @@ describe('invitations', () => {
 
   it('rejects acceptance from an account with a different email', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
-    const created = await createInvitation(accessToken, organizationId, invitee.email);
+    await createInvitation(accessToken, organizationId, invitee.email);
     const token = await getInvitationToken(invitee.email);
 
     const outsiderSession = await registerAndGetSession(app, outsider);
@@ -134,7 +134,7 @@ describe('invitations', () => {
 
   it('rejects acceptance of an already-used invitation', async () => {
     const { accessToken, organizationId } = await registerAndGetSession(app, owner);
-    const created = await createInvitation(accessToken, organizationId, invitee.email);
+    await createInvitation(accessToken, organizationId, invitee.email);
     const token = await getInvitationToken(invitee.email);
     const inviteeSession = await registerAndGetSession(app, invitee);
 

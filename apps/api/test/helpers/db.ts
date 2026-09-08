@@ -8,10 +8,16 @@ export async function resetDatabase(): Promise<void> {
   await prisma.webhookDelivery.deleteMany();
   await prisma.webhookEndpoint.deleteMany();
   await prisma.outboxEvent.deleteMany();
-  await prisma.apiKey.deleteMany();
   await prisma.refreshToken.deleteMany();
   await prisma.invitation.deleteMany();
+  // TaskActivity before ApiKey: deleting an ApiKey that still has activity
+  // rows pointing at it (apiKeyActorId) would SET NULL that column via the
+  // FK, and since those rows never have `actorId` set either (an activity
+  // row's actor is exactly one of the two, see the TaskActivity model
+  // comment in schema.prisma), that SET NULL would violate the
+  // TaskActivity_actor_xor_check constraint.
   await prisma.taskActivity.deleteMany();
+  await prisma.apiKey.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.taskLabel.deleteMany();
   await prisma.task.deleteMany();

@@ -10,6 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file=../../.env dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -24,6 +26,7 @@
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^6.4.17",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }
