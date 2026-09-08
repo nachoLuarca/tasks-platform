@@ -6,6 +6,12 @@ export interface TaskAssignee {
   email: string;
 }
 
+export interface TaskLabelSummary {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface TaskEntity {
   id: string;
   projectId: string;
@@ -20,6 +26,7 @@ export interface TaskEntity {
   dueDate: Date | null;
   completedAt: Date | null;
   version: number;
+  labels: TaskLabelSummary[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +58,7 @@ export interface TaskListFilter {
   dueBefore?: Date;
   dueAfter?: Date;
   search?: string;
+  labelId?: string;
 }
 
 export type TaskSortBy = 'createdAt' | 'dueDate' | 'priority';

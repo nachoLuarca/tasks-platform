@@ -53,6 +53,7 @@ export const taskResponseSchema = z.object({
   dueDate: z.string().datetime().nullable(),
   completedAt: z.string().datetime().nullable(),
   version: z.number().int(),
+  labels: z.array(z.object({ id: z.string().uuid(), name: z.string(), color: z.string() })),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -76,6 +77,7 @@ export const taskListQuerySchema = paginationQuerySchema.extend({
   dueBefore: z.string().datetime().optional(),
   dueAfter: z.string().datetime().optional(),
   search: z.string().trim().min(1).max(200).optional(),
+  labelId: z.string().uuid().optional(),
   sortBy: taskSortBySchema.optional().default('createdAt'),
   sortOrder: sortOrderSchema.optional().default('desc'),
 });

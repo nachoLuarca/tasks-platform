@@ -1,6 +1,13 @@
 import type { RequestHandler } from 'express';
 
-import type { AssignTaskRequest, CreateTaskRequest, Role, TaskListQuery, UpdateTaskRequest } from '@tasks-platform/contracts';
+import type {
+  AssignTaskRequest,
+  CreateTaskRequest,
+  Role,
+  SetTaskLabelsRequest,
+  TaskListQuery,
+  UpdateTaskRequest,
+} from '@tasks-platform/contracts';
 
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import type { ProjectEntity } from '../projects/projects.types.js';
@@ -91,16 +98,30 @@ export const tasksController = {
 
   assign: (async (req, res) => {
     const task = getTask(req);
-    const { organizationId } = getMembershipContext(req);
+    const { organizationId, role } = getMembershipContext(req);
+    const actorId = getAuthenticatedUserId(req);
     const body = req.body as AssignTaskRequest;
 
-    const updated = await tasksService.assign(task, organizationId, body.userId);
+    const updated = await tasksService.assign(task, role, actorId, organizationId, body.userId);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 
   unassign: (async (req, res) => {
     const task = getTask(req);
-    const updated = await tasksService.unassign(task);
+    const { role } = getMembershipContext(req);
+    const actorId = getAuthenticatedUserId(req);
+
+    const updated = await tasksService.unassign(task, role, actorId);
+    res.status(200).json(toTaskResponse(updated));
+  }) satisfies RequestHandler,
+
+  setLabels: (async (req, res) => {
+    const task = getTask(req);
+    const { organizationId, role } = getMembershipContext(req);
+    const actorId = getAuthenticatedUserId(req);
+    const body = req.body as SetTaskLabelsRequest;
+
+    const updated = await tasksService.setLabels(task, role, actorId, organizationId, body.labelIds);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 };

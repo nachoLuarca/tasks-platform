@@ -17,6 +17,7 @@ export function toTaskResponse(task: TaskEntity): TaskResponse {
     dueDate: task.dueDate ? task.dueDate.toISOString() : null,
     completedAt: task.completedAt ? task.completedAt.toISOString() : null,
     version: task.version,
+    labels: task.labels,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };
