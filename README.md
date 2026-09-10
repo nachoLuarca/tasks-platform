@@ -80,7 +80,12 @@ Todas las rutas de la API llevan el prefijo `/v1`.
 | `POST /v1/auth/refresh`      |       -       | Renueva el access token, rota el refresh token              |
 | `POST /v1/auth/logout`       |       -       | Cierra la sesion actual                                     |
 | `POST /v1/auth/logout-all`   |       ✓       | Cierra todas las sesiones del usuario                       |
-| `GET /v1/auth/me`            |       ✓       | Perfil del usuario autenticado                              |
+| `GET /v1/auth/me`            |       ✓       | Perfil del usuario autenticado, con `emailVerifiedAt` (`null` si no verifico) |
+| `POST /v1/auth/verify-email` |       -       | Consume el token de verificacion y marca el correo como verificado |
+| `POST /v1/auth/resend-verification` | ✓ | Reenvia el correo de verificacion (maximo 3 por hora por cuenta, luego 429) |
+| `POST /v1/auth/forgot-password` | - | Pide un enlace de recuperacion; responde siempre `202` igual, exista o no la cuenta |
+| `GET /v1/auth/reset-password/:token` | - | Indica si un token de recuperacion sigue siendo valido, sin consumirlo |
+| `POST /v1/auth/reset-password` | - | Consume el token, cambia la contraseña y cierra **todas** las sesiones |
 | `PATCH /v1/users/me`         |       ✓       | Actualiza el nombre                                         |
 | `POST /v1/users/me/password` |       ✓       | Cambia la contraseña; revoca las demas sesiones             |
 | `POST /v1/organizations`     |       ✓       | Crea una organizacion adicional                             |
@@ -419,28 +424,148 @@ integraciones de servidor a servidor. Llevan un prefijo visible
 (`tp_live_...`) y solo se guarda su hash; la clave completa se muestra una
 sola vez, al crearla.
 
-Los `scopes` de una key son independientes del rol de quien la crea, y en
-esta fase son deliberadamente de **solo lectura**
-(`project:read`, `task:read`, `member:list` -- ver el porque en
-[`apps/api/src/shared/authorization/api-key-scopes.ts`](./apps/api/src/shared/authorization/api-key-scopes.ts)):
-una key no borra ni crea nada, sin importar que la haya creado el `OWNER`.
+Los `scopes` de una key son su propia lista de permisos, del mismo
+vocabulario que la matriz de roles. Una key no "actua como" quien la creo.
+
+#### Catalogo de scopes
+
+| Tipo | Scope | Que permite |
+|---|---|---|
+| Lectura | `project:read` | Listar y leer proyectos |
+| Lectura | `task:read` | Listar y leer tareas, sus comentarios, su bitacora y el catalogo de etiquetas |
+| Lectura | `member:list` | Listar los miembros de la organizacion |
+| Escritura | `project:create` | Crear proyectos |
+| Escritura | `project:update` | Editar, archivar y desarchivar proyectos |
+| Escritura | `task:create` | Crear tareas |
+| Escritura | `task:update:any` | Editar cualquier tarea y fijar sus etiquetas |
+| Escritura | `task:assign` | Asignar y desasignar cualquier tarea a cualquier miembro |
+| Escritura | `comment:create` | Comentar tareas |
+| Escritura | `label:manage` | Crear, renombrar, recolorear y borrar etiquetas |
+
+Nada mas se puede conceder a una key, ni siquiera por el `OWNER`:
+
+- **Borrados** (`project:delete`, `task:delete:any`, `comment:delete:any`): la
+  fase habilita crear y modificar, no borrar.
+- **Variantes `:own` y `task:assign:self`**: una key no es autora ni
+  responsable de nada, asi que "lo propio" no le aplica. Por eso los scopes de
+  escritura usan siempre la variante `:any`. Una key que crea una tarea no
+  gana ningun derecho sobre ella: para editarla necesita `task:update:any`.
+- **Gestion de personas e integraciones** (`member:update-role`,
+  `member:remove`, `invitation:*`, `organization:*`, `ownership:transfer`,
+  `webhook:manage`, `apikey:manage`): una key que gestiona otras keys o
+  webhooks seria una via de escalada sin caso de uso legitimo.
+
+El porque de cada exclusion esta en
+[`apps/api/src/shared/authorization/api-key-scopes.ts`](./apps/api/src/shared/authorization/api-key-scopes.ts).
+
+#### Reglas al crear una key
+
+Cada scope pedido pasa tres controles, en este orden:
+
+1. **Existe** en el vocabulario de permisos. Si no: `422`.
+2. **Quien crea la key lo tiene** por su propio rol en la matriz. Si no:
+   `403`. Un `ADMIN` no puede fabricar una key con permisos que el no tiene
+   (por ejemplo `organization:delete`).
+3. **Es concedible a una key** segun el catalogo de arriba. Si no: `422`.
+
+#### Autoria y bitacora
+
+Lo que escribe una key queda a nombre de la key, nunca de la persona que la
+creo:
+
+- Las tareas y los proyectos llevan `createdById: null` y `createdByApiKeyId`.
+- Los comentarios llevan `authorId: null`, `author: null`, `authorApiKeyId` y
+  `authorApiKey` (`id`, `name` y `prefix`).
+- La bitacora registra `actor: { "type": "API_KEY", "id", "name", "prefix" }`,
+  y el evento de webhook, `actor: { "type": "API_KEY", "id" }`.
 
 ```bash
-# Crear una key de solo lectura
+# Crear una key que puede leer y crear tareas
 curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/api-keys \
   -H "Authorization: Bearer $OWNER_TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"CI read-only","scopes":["task:read","project:read"]}'
+  -d '{"name":"CI bot","scopes":["task:read","task:create"]}'
 # La respuesta trae "key": "tp_live_..." -- guardala ahora, no vuelve a aparecer
 API_KEY="<key de la respuesta>"
 
-# Lista tareas...
-curl http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
-  -H "Authorization: Bearer $API_KEY"
-
-# ...pero no puede crear una (403: sin el scope task:create, que ninguna key puede tener)
-curl -i -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
+# Crea una tarea a su nombre: createdById es null, createdByApiKeyId es la key
+curl -X POST http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks \
   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
-  -d '{"title":"No deberia poder crear esto"}'
+  -d '{"title":"Deploy nocturno"}'
+TASK_ID="<id de la respuesta>"
+
+# La bitacora la registra como actor API_KEY
+curl http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID/activity \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+
+# No puede editar la tarea que ella misma creo (403: sin task:update:any)
+curl -i -X PATCH http://localhost:3000/v1/organizations/$ORG_ID/projects/$PROJECT_ID/tasks/$TASK_ID \
+  -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+  -d '{"title":"Otro titulo","version":1}'
+
+# Un ADMIN no puede crear una key con un permiso que no tiene (403)
+curl -i -X POST http://localhost:3000/v1/organizations/$ORG_ID/api-keys \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Escalada","scopes":["organization:delete"]}'
+```
+
+### Verificacion de correo y recuperacion de contraseña
+
+- **La verificacion no bloquea nada.** Una cuenta sin verificar usa la API
+  con normalidad. `GET /v1/auth/me` expone `emailVerifiedAt` para que un
+  cliente muestre un aviso. Aceptar una invitacion tambien verifica el
+  correo. Ver [ADR 0011](./docs/adr/0011-account-recovery.md).
+- **Los enlaces apuntan al cliente web** (`WEB_APP_URL`), con el token en el
+  fragmento: `.../verify-email#token=...` y `.../reset-password#token=...`. El
+  fragmento nunca llega a ningun servidor. La pagina toma el token y lo manda
+  por `POST` a la API. Mientras no exista el cliente web, se copia el token del
+  correo en Mailpit.
+- **Los tokens son de un solo uso**: la verificacion vence en 24 horas y la
+  recuperacion en 1 hora. Un token desconocido, usado o vencido recibe el
+  mismo `404`.
+- **`forgot-password` responde siempre igual**, exista o no la cuenta, y en
+  el mismo tiempo: la API solo encola la solicitud, y el worker busca la
+  cuenta y envia el correo.
+  - El limite por IP responde `429`.
+  - El limite por cuenta (3 por hora) descarta la solicitud en silencio, sin
+    `429`, para no revelar si el correo existe.
+- **Restablecer cierra todas las sesiones**, incluida la del navegador que lo
+  pidio, a diferencia de `POST /v1/users/me/password`, que conserva la actual.
+  Un access token ya emitido sigue valido hasta que vence (15 minutos como
+  mucho). Ver [ADR 0011](./docs/adr/0011-account-recovery.md).
+
+```bash
+# 1. Registrarse: se encola el correo de verificacion
+curl -s -c cookies.txt -X POST http://localhost:3000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"grace@example.com","password":"correct-horse-battery","name":"Grace"}'
+ACCESS_TOKEN="<accessToken de la respuesta>"
+
+# 2. Ver el correo en Mailpit (http://localhost:8025) y sacar el token del enlace
+VERIFY_TOKEN=$(curl -s http://localhost:8025/api/v1/message/latest | grep -o 'token=[A-Za-z0-9_-]*' | head -1 | cut -d= -f2)
+
+# 3. Verificar (204) y comprobar que el perfil lo refleja
+curl -i -X POST http://localhost:3000/v1/auth/verify-email \
+  -H "Content-Type: application/json" -d "{\"token\":\"$VERIFY_TOKEN\"}"
+curl -s http://localhost:3000/v1/auth/me -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# 4. Pedir recuperacion con un correo inexistente y con uno real: misma respuesta
+curl -i -X POST http://localhost:3000/v1/auth/forgot-password \
+  -H "Content-Type: application/json" -d '{"email":"nadie@example.com"}'
+curl -i -X POST http://localhost:3000/v1/auth/forgot-password \
+  -H "Content-Type: application/json" -d '{"email":"grace@example.com"}'
+
+# 5. Sacar el token del correo de recuperacion y comprobar que sigue valido (200)
+RESET_TOKEN=$(curl -s http://localhost:8025/api/v1/message/latest | grep -o 'token=[A-Za-z0-9_-]*' | head -1 | cut -d= -f2)
+curl -s http://localhost:3000/v1/auth/reset-password/$RESET_TOKEN
+
+# 6. Restablecer (204)
+curl -i -X POST http://localhost:3000/v1/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d "{\"token\":\"$RESET_TOKEN\",\"newPassword\":\"una-contraseña-nueva-y-larga\"}"
+
+# 7. La sesion anterior ya no sirve (401), y el token tampoco sirve dos veces (404)
+curl -i -b cookies.txt -X POST http://localhost:3000/v1/auth/refresh
+curl -i http://localhost:3000/v1/auth/reset-password/$RESET_TOKEN
 ```
 
 ### Recorrido completo con curl
@@ -550,10 +675,10 @@ Scripts disponibles en la raiz del monorepo:
 tasks-platform/
   apps/
     api/                  Servicio HTTP (Express + TypeScript)
-    worker/               Despacha el outbox, entrega webhooks y envia correo
+    worker/               Despacha el outbox, entrega webhooks, envia correo y resuelve solicitudes de recuperacion
   packages/
     contracts/            Esquemas Zod y tipos compartidos entre API y frontend
-    shared/               Config, DB, logger, firma de webhooks y colas compartidas por api y worker
+    shared/               Config, DB, logger, firma de webhooks, colas y tokens de cuenta compartidos por api y worker
   docker/                 Dockerfile(s) de los servicios
   docs/
     adr/                  Registros de decisiones de arquitectura
@@ -569,6 +694,8 @@ src/
   modules/
     auth/                   Registro, login, refresh, logout, requireAuth
     users/                  Perfil y cambio de contraseña
+    email-verification/     Verificacion de correo y reenvio con limite
+    password-reset/         Solicitud, chequeo y restablecimiento de contraseña
     organizations/          Organizaciones (alta, edicion, baja)
     members/                Miembros: roles, expulsion, transferencia de propiedad
     invitations/            Invitaciones por token opaco
@@ -588,7 +715,8 @@ src/
       <dominio>.repository.ts   Acceso a datos (unico lugar que toca Prisma)
       <dominio>.mapper.ts       Entidad -> DTO de respuesta
   shared/
-    authorization/          Matriz de permisos, requireMembership, requirePermission
+    authorization/          Matriz de permisos, actor (miembro o API key),
+                             catalogo de scopes, requireMembership, requirePermission
     config/                 Configuracion tipada y validada al arranque
     db/                     Clientes de Postgres (Prisma) y Redis
     errors/                 Jerarquia de errores y middleware de errores
