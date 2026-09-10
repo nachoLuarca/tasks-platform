@@ -30,6 +30,18 @@ export const EMAIL_JOB_OPTIONS: JobsOptions = {
   removeOnFail: { age: 30 * 24 * 60 * 60 },
 };
 
+/**
+ * For emails whose job data carries a live account token (verification,
+ * password reset): same retries, but a sent job is dropped from Redis right
+ * away and a failed one is kept only a day, instead of leaving usable tokens
+ * sitting in Redis for a week or a month for debugging convenience.
+ */
+export const ACCOUNT_EMAIL_JOB_OPTIONS: JobsOptions = {
+  ...EMAIL_JOB_OPTIONS,
+  removeOnComplete: true,
+  removeOnFail: { age: 24 * 60 * 60 },
+};
+
 let connection: ConnectionOptions | undefined;
 function sharedConnection(): ConnectionOptions {
   connection ??= createQueueConnection();
@@ -41,13 +53,24 @@ export interface WebhookDeliveryJobData {
   webhookEndpointId: string;
 }
 
+/** Every email job names its `template`, so the worker's single email processor knows which one to render. */
 export interface InvitationEmailJobData {
+  template: 'invitation';
   to: string;
   organizationName: string;
   invitedByName: string;
   role: string;
   acceptUrl: string;
 }
+
+export interface EmailVerificationEmailJobData {
+  template: 'email-verification';
+  to: string;
+  name: string;
+  verifyUrl: string;
+}
+
+export type EmailJobData = InvitationEmailJobData | EmailVerificationEmailJobData;
 
 /**
  * Producers (the api for emails, the worker's dispatcher for webhook
@@ -60,6 +83,6 @@ export function webhookDeliveryQueue(): Queue<WebhookDeliveryJobData> {
   return new Queue<WebhookDeliveryJobData>(QUEUE_NAMES.webhookDelivery, { connection: sharedConnection() });
 }
 
-export function emailQueue(): Queue<InvitationEmailJobData> {
-  return new Queue<InvitationEmailJobData>(QUEUE_NAMES.email, { connection: sharedConnection() });
+export function emailQueue(): Queue<EmailJobData> {
+  return new Queue<EmailJobData>(QUEUE_NAMES.email, { connection: sharedConnection() });
 }

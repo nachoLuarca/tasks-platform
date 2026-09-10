@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
+import { sharedConfig } from '../config/index.js';
 import { prisma, type DbClient } from '../db/index.js';
 import { accountTokensRepository } from './account-tokens.repository.js';
 import type { AccountTokenPurpose, IssuedAccountToken } from './account-tokens.types.js';
@@ -25,6 +26,24 @@ export function generateOpaqueToken(): { token: string; tokenHash: string } {
  */
 export function hashOpaqueToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+const WEB_APP_PATHS: Readonly<Record<AccountTokenPurpose, string>> = {
+  'email-verification': '/verify-email',
+  'password-reset': '/reset-password',
+};
+
+/**
+ * The link that goes in the email: a page of the web client (WEB_APP_URL),
+ * with the token in the fragment. A fragment never reaches any server --
+ * not the web app's, not a proxy's access log, not a Referer header -- so
+ * the only party that ever sees the raw token is the page's own script,
+ * which then POSTs it to the API.
+ */
+export function buildAccountTokenLink(purpose: AccountTokenPurpose, token: string): string {
+  const url = new URL(WEB_APP_PATHS[purpose], sharedConfig.webAppUrl);
+  url.hash = new URLSearchParams({ token }).toString();
+  return url.toString();
 }
 
 /**

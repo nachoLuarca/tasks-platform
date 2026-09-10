@@ -11,6 +11,7 @@ import {
 import { membersRepository } from '../members/members.repository.js';
 import { organizationsRepository } from '../organizations/organizations.repository.js';
 import { usersRepository } from '../users/users.repository.js';
+import { usersService } from '../users/users.service.js';
 import { invitationsRepository } from './invitations.repository.js';
 import type { InvitationEntity, InvitationPreview } from './invitations.types.js';
 
@@ -61,6 +62,7 @@ export const invitationsService = {
     await emailQueue().add(
       'invitation',
       {
+        template: 'invitation',
         to: invitation.email,
         organizationName: organization.name,
         invitedByName: invitedBy.name,
@@ -119,12 +121,17 @@ export const invitationsService = {
       throw new ConflictError('You are already a member of this organization');
     }
 
+    // Accepting also verifies the address (PHASE.md decision 2, Phase 4.5):
+    // the invitation link was delivered to exactly this email, which the
+    // check above already matched against the account, so it proves the
+    // same thing a verification link would.
     await prisma.$transaction(async (tx) => {
       await membersRepository.create(
         { userId, organizationId: invitation.organizationId, role: invitation.role },
         tx,
       );
       await invitationsRepository.markAccepted(invitation.id, tx);
+      await usersService.markEmailVerified(userId, tx);
     });
   },
 };

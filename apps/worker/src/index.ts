@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq';
-import { createQueueConnection, prisma, redis, QUEUE_NAMES, type WebhookDeliveryJobData, type InvitationEmailJobData } from '@tasks-platform/shared';
+import { createQueueConnection, prisma, redis, QUEUE_NAMES, type WebhookDeliveryJobData, type EmailJobData } from '@tasks-platform/shared';
 
 import { config } from './config/index.js';
 import { startOutboxDispatcher } from './dispatcher/outbox-dispatcher.js';
@@ -33,7 +33,7 @@ webhookDeliveryWorker.on('failed', (job, error) => {
   }
 });
 
-const emailWorker = new Worker<InvitationEmailJobData>(QUEUE_NAMES.email, processEmail, {
+const emailWorker = new Worker<EmailJobData>(QUEUE_NAMES.email, processEmail, {
   connection: createQueueConnection(),
   concurrency: 5,
 });

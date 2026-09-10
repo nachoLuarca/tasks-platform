@@ -1,5 +1,10 @@
 import nodemailer, { type Transporter } from 'nodemailer';
-import { sharedConfig, type InvitationEmailJobData } from '@tasks-platform/shared';
+import {
+  ACCOUNT_TOKEN_TTL_MS,
+  sharedConfig,
+  type EmailVerificationEmailJobData,
+  type InvitationEmailJobData,
+} from '@tasks-platform/shared';
 
 let transporter: Transporter | undefined;
 function getTransporter(): Transporter {
@@ -14,6 +19,12 @@ function getTransporter(): Transporter {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
+}
+
+/** "24 horas" / "1 hora", from the same TTL the token was issued with, so the email can't promise a lifetime the token doesn't have. */
+function describeLifetime(ttlMs: number): string {
+  const hours = Math.round(ttlMs / (60 * 60 * 1000));
+  return hours === 1 ? '1 hora' : `${hours} horas`;
 }
 
 function invitationText(data: InvitationEmailJobData): string {
@@ -42,5 +53,40 @@ export async function sendInvitationEmail(data: InvitationEmailJobData): Promise
     subject: `Invitación a ${data.organizationName}`,
     text: invitationText(data),
     html: invitationHtml(data),
+  });
+}
+
+function emailVerificationText(data: EmailVerificationEmailJobData): string {
+  const lifetime = describeLifetime(ACCOUNT_TOKEN_TTL_MS['email-verification']);
+  return [
+    `Hola, ${data.name}.`,
+    '',
+    'Confirmá que esta dirección de correo es tuya para terminar de configurar tu cuenta de Tasks Platform:',
+    data.verifyUrl,
+    '',
+    `El enlace vence en ${lifetime} y sirve una sola vez.`,
+    '',
+    'Si no creaste esta cuenta, podés ignorar este correo.',
+  ].join('\n');
+}
+
+function emailVerificationHtml(data: EmailVerificationEmailJobData): string {
+  const lifetime = describeLifetime(ACCOUNT_TOKEN_TTL_MS['email-verification']);
+  return [
+    `<p>Hola, ${escapeHtml(data.name)}.</p>`,
+    '<p>Confirmá que esta dirección de correo es tuya para terminar de configurar tu cuenta de Tasks Platform.</p>',
+    `<p><a href="${escapeHtml(data.verifyUrl)}">Confirmar mi correo</a></p>`,
+    `<p>El enlace vence en ${lifetime} y sirve una sola vez.</p>`,
+    '<p>Si no creaste esta cuenta, podés ignorar este correo.</p>',
+  ].join('\n');
+}
+
+export async function sendEmailVerificationEmail(data: EmailVerificationEmailJobData): Promise<void> {
+  await getTransporter().sendMail({
+    from: sharedConfig.smtp.from,
+    to: data.to,
+    subject: 'Confirmá tu correo en Tasks Platform',
+    text: emailVerificationText(data),
+    html: emailVerificationHtml(data),
   });
 }

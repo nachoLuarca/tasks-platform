@@ -34,6 +34,11 @@ export const usersRepository = {
     return toEntity(row);
   },
 
+  /** Only sets the timestamp the first time: re-verifying keeps the original verification date. */
+  async markEmailVerified(id: string, verifiedAt: Date, client: DbClient = prisma): Promise<void> {
+    await client.user.updateMany({ where: { id, emailVerifiedAt: null }, data: { emailVerifiedAt: verifiedAt } });
+  },
+
   async updatePasswordHash(
     id: string,
     passwordHash: string,

@@ -24,6 +24,15 @@ export const usersService = {
     return user;
   },
 
+  /**
+   * Records that the user proved control of their address -- by consuming a
+   * verification token, or by accepting an invitation that was sent to it.
+   * Pass the transaction of whichever of those authorized it.
+   */
+  async markEmailVerified(id: string, client?: DbClient): Promise<void> {
+    await usersRepository.markEmailVerified(id, new Date(), client);
+  },
+
   async updateName(id: string, name: string): Promise<UserEntity> {
     return usersRepository.updateName(id, name);
   },

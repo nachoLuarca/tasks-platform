@@ -1,8 +1,17 @@
 import type { Job } from 'bullmq';
-import type { InvitationEmailJobData } from '@tasks-platform/shared';
+import type { EmailJobData } from '@tasks-platform/shared';
 
-import { sendInvitationEmail } from '../services/email.service.js';
+import { sendEmailVerificationEmail, sendInvitationEmail } from '../services/email.service.js';
 
-export async function processEmail(job: Job<InvitationEmailJobData>): Promise<void> {
-  await sendInvitationEmail(job.data);
+/** One queue, one processor: `template` picks the renderer. A thrown send error lets BullMQ retry per EMAIL_JOB_OPTIONS. */
+export async function processEmail(job: Job<EmailJobData>): Promise<void> {
+  const { data } = job;
+  switch (data.template) {
+    case 'invitation':
+      await sendInvitationEmail(data);
+      return;
+    case 'email-verification':
+      await sendEmailVerificationEmail(data);
+      return;
+  }
 }

@@ -24,6 +24,13 @@ export const sharedEnvSchema = z.object({
   // `req.protocol`/`req.get('host')` from, unlike an HTTP handler.
   APP_PUBLIC_URL: z.string().url('APP_PUBLIC_URL must be a valid URL'),
 
+  // Base URL of the web client. Email-verification and password-reset links
+  // point here, not at the API: consuming a single-use token must be a
+  // deliberate POST from a page, never a GET that a mail scanner prefetching
+  // links would trigger. The token travels in the URL fragment (#token=...),
+  // which browsers never send to any server, nor in a Referer header.
+  WEB_APP_URL: z.string().url('WEB_APP_URL must be a valid URL').default('http://localhost:5173'),
+
   // --- SMTP (Mailpit in development, a real relay in production) ---
   SMTP_HOST: z.string().min(1),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),

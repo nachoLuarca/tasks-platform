@@ -26,6 +26,7 @@ export function loadSharedConfig() {
     isTest: env.NODE_ENV === 'test',
     logLevel: env.LOG_LEVEL,
     appPublicUrl: env.APP_PUBLIC_URL,
+    webAppUrl: env.WEB_APP_URL,
     database: Object.freeze({ url: env.DATABASE_URL }),
     redis: Object.freeze({ url: env.REDIS_URL }),
     smtp: Object.freeze({

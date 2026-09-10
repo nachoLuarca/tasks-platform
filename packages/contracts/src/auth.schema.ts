@@ -15,6 +15,14 @@ export const loginRequestSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
+/** An opaque single-use account token (verification or password reset), as pasted from an email link. Shape only -- validity is the API's call. */
+export const accountTokenSchema = z.string().trim().min(1, 'Token is required').max(512);
+
+export const verifyEmailRequestSchema = z.object({
+  token: accountTokenSchema,
+});
+export type VerifyEmailRequest = z.infer<typeof verifyEmailRequestSchema>;
+
 export const userProfileSchema = z.object({
   id: z.string().uuid(),
   email: emailSchema,
