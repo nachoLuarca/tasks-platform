@@ -42,10 +42,11 @@ function diffTaskFields(
   before: TaskEntity,
   after: TaskEntity,
   actorId: string,
+  organizationId: string,
   input: { title?: string; status?: TaskEntity['status']; priority?: TaskPriority; dueDate?: string | null },
 ): RecordActivityInput[] {
   const entries: RecordActivityInput[] = [];
-  const base = { taskId: after.id, actorId };
+  const base = { taskId: after.id, actorId, organizationId };
 
   if (input.title !== undefined && input.title !== before.title) {
     entries.push({ ...base, type: 'TITLE_CHANGED', before: before.title, after: after.title });
@@ -92,7 +93,14 @@ export const tasksService = {
     return prisma.$transaction(async (tx) => {
       const task = await tasksRepository.createWithNextNumber(createInput, tx);
       await activityService.record(
-        { taskId: task.id, actorId: createdById, type: 'TASK_CREATED', before: null, after: { title: task.title, status: task.status } },
+        {
+          taskId: task.id,
+          organizationId: project.organizationId,
+          actorId: createdById,
+          type: 'TASK_CREATED',
+          before: null,
+          after: { title: task.title, status: task.status },
+        },
         tx,
       );
       return task;
@@ -141,6 +149,7 @@ export const tasksService = {
     task: TaskEntity,
     role: Role,
     actorId: string,
+    organizationId: string,
     input: { title?: string; description?: string | null; status?: TaskEntity['status']; priority?: TaskPriority; dueDate?: string | null; version: number },
   ): Promise<TaskEntity> {
     if (!canActOnResource(role, 'task:update:any', 'task:update:own', isOwnTask(task, actorId))) {
@@ -167,7 +176,7 @@ export const tasksService = {
         throw new ConflictError('Task was modified by someone else; reload and try again');
       }
 
-      const changes = diffTaskFields(task, updated, actorId, input);
+      const changes = diffTaskFields(task, updated, actorId, organizationId, input);
       for (const entry of changes) {
         await activityService.record(entry, tx);
       }
@@ -208,14 +217,14 @@ export const tasksService = {
     return prisma.$transaction(async (tx) => {
       const updated = await tasksRepository.assign(task.id, assigneeId, tx);
       await activityService.record(
-        { taskId: task.id, actorId, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: assigneeId },
+        { taskId: task.id, organizationId, actorId, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: assigneeId },
         tx,
       );
       return updated;
     });
   },
 
-  async unassign(task: TaskEntity, role: Role, actorId: string): Promise<TaskEntity> {
+  async unassign(task: TaskEntity, role: Role, actorId: string, organizationId: string): Promise<TaskEntity> {
     if (!roleHasPermission(role, 'task:assign')) {
       if (!roleHasPermission(role, 'task:assign:self')) {
         throw new ForbiddenError('Missing permission: task:assign or task:assign:self');
@@ -228,7 +237,7 @@ export const tasksService = {
     return prisma.$transaction(async (tx) => {
       const updated = await tasksRepository.assign(task.id, null, tx);
       await activityService.record(
-        { taskId: task.id, actorId, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: null },
+        { taskId: task.id, organizationId, actorId, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: null },
         tx,
       );
       return updated;

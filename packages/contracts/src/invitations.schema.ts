@@ -22,12 +22,12 @@ export const invitationListResponseSchema = z.array(invitationResponseSchema);
 export type InvitationListResponse = z.infer<typeof invitationListResponseSchema>;
 
 /**
- * Sending the invitation email is Phase 4 (see docs/DEBT.md): until then the
- * creation endpoint hands back the link so it can be shared by hand.
+ * The invitation link used to come back in this response (Phase 2 -> Phase
+ * 4 gap, see docs/DEBT.md, now closed): creating an invitation queues a real
+ * email instead (see invitations.service.ts), so this response carries
+ * nothing beyond the invitation itself.
  */
-export const createInvitationResponseSchema = invitationResponseSchema.extend({
-  invitationUrl: z.string().url(),
-});
+export const createInvitationResponseSchema = invitationResponseSchema;
 export type CreateInvitationResponse = z.infer<typeof createInvitationResponseSchema>;
 
 /** Public preview: only what's needed to decide whether to accept. */

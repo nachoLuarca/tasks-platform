@@ -2,18 +2,13 @@ import type { RequestHandler } from 'express';
 
 import type { ChangePasswordRequest, UpdateProfileRequest } from '@tasks-platform/contracts';
 
-import { UnauthorizedError } from '../../shared/errors/index.js';
+import { requireUserId } from '../../shared/authorization/index.js';
 import { authService } from '../auth/auth.service.js';
 import { readRefreshTokenCookie } from '../auth/cookies.js';
 import { toUserProfile } from './users.mapper.js';
 import { usersService } from './users.service.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
+const getAuthenticatedUserId = requireUserId;
 
 export const usersController = {
   updateProfile: (async (req, res) => {

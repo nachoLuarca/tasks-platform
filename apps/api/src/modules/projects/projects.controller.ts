@@ -2,17 +2,13 @@ import type { RequestHandler } from 'express';
 
 import type { CreateProjectRequest, ProjectListQuery, UpdateProjectRequest } from '@tasks-platform/contracts';
 
+import { requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { toProjectResponse } from './projects.mapper.js';
 import { projectsService } from './projects.service.js';
 import type { ProjectEntity } from './projects.types.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
+const getAuthenticatedUserId = requireUserId;
 
 function getMembershipContext(req: { membership?: { organizationId: string } }): { organizationId: string } {
   if (!req.membership) {

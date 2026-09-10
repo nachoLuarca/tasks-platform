@@ -14,10 +14,22 @@ export const taskActivityTypeSchema = z.enum([
 ]);
 export type TaskActivityType = z.infer<typeof taskActivityTypeSchema>;
 
+/**
+ * Exactly one of the two shapes: a human actor (a JWT-authenticated user) or
+ * a machine actor (an API key), never both -- see the `TaskActivity` model
+ * comment in schema.prisma (Phase 4, PHASE.md decision 9). Never carries the
+ * key's secret or its hash, only what identifies it in a listing.
+ */
+export const taskActivityActorSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('USER'), id: z.string().uuid(), name: z.string(), email: z.string().email() }),
+  z.object({ type: z.literal('API_KEY'), id: z.string().uuid(), name: z.string(), prefix: z.string() }),
+]);
+export type TaskActivityActor = z.infer<typeof taskActivityActorSchema>;
+
 export const taskActivityResponseSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
-  actorId: z.string().uuid(),
+  actor: taskActivityActorSchema,
   type: taskActivityTypeSchema,
   changes: z.object({ before: z.unknown(), after: z.unknown() }),
   createdAt: z.string().datetime(),

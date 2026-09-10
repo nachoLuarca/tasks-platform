@@ -12,11 +12,8 @@ export function toInvitationResponse(invitation: InvitationEntity): InvitationRe
   };
 }
 
-export function toCreateInvitationResponse(
-  invitation: InvitationEntity,
-  invitationUrl: string,
-): CreateInvitationResponse {
-  return { ...toInvitationResponse(invitation), invitationUrl };
+export function toCreateInvitationResponse(invitation: InvitationEntity): CreateInvitationResponse {
+  return toInvitationResponse(invitation);
 }
 
 export function toInvitationPreviewResponse(preview: InvitationPreview): InvitationPreviewResponse {

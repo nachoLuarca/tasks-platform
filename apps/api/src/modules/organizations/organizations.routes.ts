@@ -8,6 +8,7 @@ import {
 
 import { requireMembership, requirePermission } from '../../shared/authorization/index.js';
 import { validateBody } from '../../shared/http/index.js';
+import { apiKeysRouter } from '../api-keys/api-keys.routes.js';
 import { requireAuth } from '../auth/require-auth.middleware.js';
 import { membersController } from '../members/members.controller.js';
 import { membersRouter } from '../members/members.routes.js';
@@ -15,6 +16,7 @@ import { organizationInvitationsRouter } from '../invitations/invitations.routes
 import { labelsRouter } from '../labels/labels.routes.js';
 import { projectsRouter } from '../projects/projects.routes.js';
 import { organizationTasksRouter } from '../tasks/tasks.routes.js';
+import { webhooksRouter } from '../webhooks/webhooks.routes.js';
 import { organizationsController } from './organizations.controller.js';
 
 export const organizationsRouter = Router();
@@ -58,3 +60,5 @@ organizationsRouter.use('/:organizationId/invitations', requireMembership, organ
 organizationsRouter.use('/:organizationId/projects', requireMembership, projectsRouter);
 organizationsRouter.use('/:organizationId/tasks', requireMembership, organizationTasksRouter);
 organizationsRouter.use('/:organizationId/labels', requireMembership, labelsRouter);
+organizationsRouter.use('/:organizationId/webhooks', requireMembership, webhooksRouter);
+organizationsRouter.use('/:organizationId/api-keys', requireMembership, apiKeysRouter);

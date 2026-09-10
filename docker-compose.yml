@@ -7,6 +7,12 @@ services:
       dockerfile: docker/api.Dockerfile
       target: dev
     user: "1000:1000"
+    # See docs/DEBT.md: pnpm's automatic deps check can purge/reinstall
+    # node_modules on startup, and a single flaky network request during
+    # that reinstall can crash the process before it ever gets to `pnpm run
+    # dev`. A restart resolves it without touching code, so retry a few
+    # times before giving up.
+    restart: on-failure:3
     env_file:
       - .env
     environment:
@@ -20,6 +26,7 @@ services:
       - /app/apps/api/node_modules
       - /app/apps/worker/node_modules
       - /app/packages/contracts/node_modules
+      - /app/packages/shared/node_modules
     depends_on:
       db:
         condition: service_healthy
@@ -36,7 +43,61 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      # The dev target rebuilds contracts/shared and runs `prisma generate`
+      # on every container start before `tsx watch` is even listening (see
+      # the root `dev` script) -- routinely ~60-90s, occasionally more if
+      # corepack has to fetch the pnpm shim. A short start_period makes
+      # Docker count those early failures against `retries` before the
+      # server is actually up, so the container flips to unhealthy and only
+      # self-corrects once a check finally lands after boot. Give it enough
+      # room to boot before any failure counts.
+      start_period: 120s
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+      target: dev
+    user: "1000:1000"
+    # See the api service's comment above and docs/DEBT.md.
+    restart: on-failure:3
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+    ports:
+      - '${WORKER_PORT:-3100}:3100'
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/worker/node_modules
+      - /app/packages/contracts/node_modules
+      - /app/packages/shared/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3100/health/live').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # See the api service's healthcheck comment above -- same dev-mode
+      # boot chain, same fix.
+      start_period: 120s
 
   db:
     image: postgres:17-alpine

@@ -4,6 +4,49 @@ Registro de atajos deliberados que quedaron documentados a proposito, para no
 perderlos de vista. Cuando se resuelva un punto, se borra de aca (el `git log`
 del commit que lo resuelve es la referencia historica).
 
+## Los contenedores de desarrollo pueden reinstalar dependencias al arrancar
+
+**Donde:** `docker/api.Dockerfile` y `docker/worker.Dockerfile`, stage `dev`.
+
+**Que pasa:** al arrancar, `pnpm run dev`/`dev:worker` ejecuta la
+verificacion automatica de pnpm ("deps status check") que compara el
+`pnpm-lock.yaml` montado desde el host contra el estado de `node_modules`
+del contenedor. Si detecta cualquier diferencia, purga y reinstala **todas**
+las dependencias del workspace desde el registro, dentro del contenedor, en
+vez de arrancar directo. Con una red lenta o inestable esto puede demorar
+varios minutos o, si una descarga puntual falla de forma persistente,
+terminar el proceso con error (el contenedor queda `Exited`).
+
+**Por que se hizo asi:** `user: "1000:1000"` en `docker-compose.yml` corre el
+proceso como el usuario del host (para que los archivos que el hot-reload
+toca queden con su dueño, no con el de root), pero `node_modules` se arma
+como root durante el build de la imagen; `CI=true` y un `chmod -R a+rwX`
+sobre `node_modules` (agregados para resolver esta fase) evitan que la
+purga aborte por falta de TTY o por permisos, pero no evitan que la purga
+*ocurra* cuando pnpm decide que hay que reinstalar.
+
+**Costo:** un `docker compose up` puede tardar bastante mas de lo esperado
+la primera vez que arranca despues de `docker compose down`/`--force-recreate
+-V`, o fallar de forma intermitente si la descarga de un paquete puntual
+falla durante la reinstalacion (visto en esta misma fase: un timeout
+descargando el motor de Prisma tumbo el contenedor `api` una vez; un
+`docker compose up -d api` posterior lo resolvio sin cambiar nada de
+codigo).
+
+**Como resolverlo cuando se retome:** investigar por que la verificacion de
+pnpm considera desactualizado un `node_modules` que en teoria coincide con
+el lockfile recien horneado en la imagen (sospecha: el archivo marcador que
+pnpm usa para esa comparacion vive dentro de `node_modules`, que es un
+volumen anonimo separado del bind mount del codigo fuente, y algo en ese
+volumen queda inconsistente entre builds). Una alternativa mas simple:
+agregar una politica de `restart: on-failure` a `api` y `worker` en
+`docker-compose.yml` para que un fallo de red puntual durante la
+reinstalacion se resuelva solo con un reintento, sin intervencion manual.
+
+**Prioridad:** media -- no bloquea un `docker compose up` con red estable,
+pero es una fuente de arranques lentos o fallidos intermitentes en entornos
+con conectividad restringida.
+
 ## La imagen de runtime de la API copia el `node_modules` completo del build
 
 **Donde:** `docker/api.Dockerfile`, stage `runtime`.
@@ -61,34 +104,62 @@ usadas (Linux x64 para Docker y CI, mas la plataforma de desarrollo local).
 **Prioridad:** baja, es un costo de tiempo/espacio en la instalacion, no un
 problema de correctitud.
 
-## El enlace de invitacion se devuelve en la respuesta de la API, no por correo
+## El secreto del webhook se guarda en texto plano
 
-**Donde:** `apps/api/src/modules/invitations/invitations.controller.ts`
-(`create`), `packages/contracts/src/invitations.schema.ts`
-(`createInvitationResponseSchema`).
+**Donde:** columna `WebhookEndpoint.secret` (`apps/api/prisma/schema.prisma`).
 
-**Que pasa:** `POST /v1/organizations/:organizationId/invitations` devuelve
-el campo `invitationUrl` con el enlace completo (`.../v1/invitations/:token`)
-en el cuerpo de la respuesta HTTP, en vez de enviarlo por correo a la persona
-invitada.
+**Que pasa:** el secreto usado para firmar cada entrega (HMAC-SHA256) se
+guarda sin cifrar en la base. No es un token opaco verificable por hash como
+el refresh token o el de invitacion: el worker necesita el valor real para
+firmar cada entrega futura, asi que un hash de un solo sentido no sirve aca.
 
-**Por que se hizo asi:** el envio real de correo, la cola y el worker que la
-consume son alcance de la Fase 4 (ver PHASE.md, decision 8 de la Fase 2). Sin
-un mecanismo de entrega, la unica forma de que quien invita pueda compartir
-el enlace con la persona invitada es que la API se lo devuelva directamente.
+**Por que se hizo asi:** cifrar en reposo requiere un gestor de secretos
+(KMS, Vault, o equivalente) que todavia no existe en el proyecto. PHASE.md
+lo deja explicitamente fuera de alcance de esta fase y pide anotarlo aca.
 
-**Costo:** cualquier cliente con acceso a la respuesta HTTP (o a un log que la
-capture sin cuidado) puede ver el enlace de invitacion, que efectivamente es
-una credencial de un solo uso. En Fase 2 el consumidor de la API es de
-confianza (quien administra la organizacion), pero no es el diseño final.
+**Costo:** quien tenga acceso de lectura a la base de datos de produccion
+puede leer el secreto de cualquier webhook y falsificar entregas firmadas
+en su nombre.
 
-**Como resolverlo cuando se retome:** en la Fase 4, cuando exista la cola y
-el worker de correo, mover el envio del enlace a un job encolado tras crear
-la invitacion, y quitar `invitationUrl` de la respuesta HTTP (dejando solo la
-confirmacion de que la invitacion se creo).
+**Como resolverlo cuando se retome:** cuando exista un gestor de secretos
+(Fase 6 en el roadmap actual), cifrar `secret` en reposo (por ejemplo con
+envelope encryption) y descifrar solo en el momento de firmar, dentro del
+worker.
 
-**Prioridad:** media — no es un problema mientras el proyecto no tenga
-usuarios reales, pero bloquea el cierre "real" del flujo de invitaciones.
+**Prioridad:** media-alta antes de manejar webhooks de organizaciones reales;
+sin impacto mientras el proyecto no se despliegue con datos de produccion.
+
+## El despachador marca un evento como despachado antes de encolarlo
+
+**Donde:** `apps/worker/src/dispatcher/outbox-dispatcher.ts`
+(`dispatchOutboxBatch`).
+
+**Que pasa:** la transaccion que reclama eventos pendientes (`FOR UPDATE
+SKIP LOCKED`) marca `dispatchedAt` y confirma en Postgres; recien despues,
+ya fuera de esa transaccion, se encola el trabajo de entrega en BullMQ
+(Redis). Si el proceso muere exactamente en esa ventana, el evento queda
+marcado como despachado pero nunca llega a encolarse: no se entrega nunca,
+y el despachador no vuelve a intentarlo porque ya no esta "pendiente".
+
+**Por que se hizo asi:** Postgres y Redis son dos almacenes distintos; no
+hay una transaccion que abarque ambos. Marcar como despachado *despues* de
+encolar tiene el problema inverso (un crash entre encolar y marcar duplica
+la entrega); se eligio el orden que prioriza "nunca se entrega dos veces"
+sobre "siempre se entrega al menos una vez", ya que las entregas duplicadas
+son mas dificiles de razonar para quien integra un webhook que una perdida
+puntual y rara.
+
+**Costo:** en el caso extremadamente improbable de que el proceso del worker
+muera en esa ventana especifica, ese evento puntual no se entrega nunca, sin
+ningun reintento posterior.
+
+**Como resolverlo cuando se retome:** un barrido periodico que busque
+eventos con `dispatchedAt` antiguo (por ejemplo, mas de N minutos) y sin
+ninguna `WebhookDelivery` asociada, y los vuelva a encolar.
+
+**Prioridad:** baja: la ventana de riesgo es de milisegundos y requiere un
+crash exactamente ahi, no un fallo de red comun (esos ya estan cubiertos por
+los reintentos de BullMQ).
 
 ## Prisma tiene una version mayor disponible
 

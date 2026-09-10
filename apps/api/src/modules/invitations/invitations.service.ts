@@ -1,13 +1,15 @@
 import type { Role } from '@tasks-platform/contracts';
+import { EMAIL_JOB_OPTIONS, emailQueue, sharedConfig } from '@tasks-platform/shared';
 
 import { prisma } from '../../shared/db/index.js';
-import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js';
+import { ConflictError, ForbiddenError, NotFoundError, UnprocessableEntityError } from '../../shared/errors/index.js';
 import {
   generateInvitationToken,
   hashToken,
   INVITATION_TOKEN_TTL_DAYS,
 } from '../../shared/security/index.js';
 import { membersRepository } from '../members/members.repository.js';
+import { organizationsRepository } from '../organizations/organizations.repository.js';
 import { usersRepository } from '../users/users.repository.js';
 import { invitationsRepository } from './invitations.repository.js';
 import type { InvitationEntity, InvitationPreview } from './invitations.types.js';
@@ -17,12 +19,7 @@ function expiryDate(): Date {
 }
 
 export const invitationsService = {
-  async create(
-    organizationId: string,
-    invitedById: string,
-    email: string,
-    role: Role,
-  ): Promise<{ invitation: InvitationEntity; token: string }> {
+  async create(organizationId: string, invitedById: string, email: string, role: Role): Promise<InvitationEntity> {
     const existingUser = await usersRepository.findByEmail(email);
     if (existingUser) {
       const existingMembership = await membersRepository.findByUserAndOrganization(
@@ -39,6 +36,12 @@ export const invitationsService = {
       throw new ConflictError('There is already a pending invitation for this email');
     }
 
+    const organization = await organizationsRepository.findById(organizationId);
+    const invitedBy = await usersRepository.findById(invitedById);
+    if (!organization || !invitedBy) {
+      throw new UnprocessableEntityError('Organization or inviter no longer exists');
+    }
+
     const { token, tokenHash } = generateInvitationToken();
     const invitation = await invitationsRepository.create({
       organizationId,
@@ -49,7 +52,25 @@ export const invitationsService = {
       expiresAt: expiryDate(),
     });
 
-    return { invitation, token };
+    // Queued, not awaited-and-sent here: the worker's email processor
+    // (apps/worker/src/processors/email.processor.ts) owns actually talking
+    // to SMTP, so a slow or unreachable mail server never adds latency to
+    // this request. This is the resolution of the Phase 2 gap tracked in
+    // docs/DEBT.md -- the endpoint used to hand the link back directly
+    // because the queue didn't exist yet.
+    await emailQueue().add(
+      'invitation',
+      {
+        to: invitation.email,
+        organizationName: organization.name,
+        invitedByName: invitedBy.name,
+        role: invitation.role,
+        acceptUrl: `${sharedConfig.appPublicUrl}/v1/invitations/${token}`,
+      },
+      EMAIL_JOB_OPTIONS,
+    );
+
+    return invitation;
   },
 
   async listPending(organizationId: string): Promise<InvitationEntity[]> {

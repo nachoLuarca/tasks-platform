@@ -5,6 +5,7 @@ import { buildApp } from '../../src/app.js';
 import { prisma } from '../../src/shared/db/index.js';
 import { registerAndGetSession, type RegisteredSession } from '../helpers/auth.js';
 import { resetDatabase } from '../helpers/db.js';
+import { getInvitationToken } from '../helpers/invitations.js';
 
 const app = buildApp();
 
@@ -22,11 +23,11 @@ async function addMember(
   user: { email: string; password: string; name: string },
   role: string,
 ): Promise<RegisteredSession> {
-  const invitation = await request(app)
+  await request(app)
     .post(`/v1/organizations/${organizationId}/invitations`)
     .set('Authorization', `Bearer ${ownerAccessToken}`)
     .send({ email: user.email, role });
-  const token = (invitation.body.invitationUrl as string).split('/').pop();
+  const token = await getInvitationToken(user.email);
 
   const session = await registerAndGetSession(app, user);
   await request(app).post(`/v1/invitations/${token}/accept`).set('Authorization', `Bearer ${session.accessToken}`);

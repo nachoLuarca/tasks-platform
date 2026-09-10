@@ -6,15 +6,16 @@ const booleanFromString = (defaultValue: 'true' | 'false') =>
     .default(defaultValue)
     .transform((value) => value === 'true');
 
+/**
+ * API-only settings. NODE_ENV/LOG_LEVEL/DATABASE_URL/REDIS_URL are validated
+ * once by `sharedEnvSchema` (packages/shared) instead of a second time here
+ * -- see shared/config/config.ts, which merges both.
+ */
 export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN cannot be empty'),
   BODY_LIMIT: z.string().min(1).default('1mb'),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
-  DATABASE_URL: z.string().url('DATABASE_URL must be a valid connection URL'),
-  REDIS_URL: z.string().url('REDIS_URL must be a valid connection URL'),
 
   // --- Auth ---
   JWT_SECRET: z

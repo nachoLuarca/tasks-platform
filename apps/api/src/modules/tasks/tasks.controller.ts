@@ -1,34 +1,19 @@
 import type { RequestHandler } from 'express';
 
-import type {
-  AssignTaskRequest,
-  CreateTaskRequest,
-  Role,
-  SetTaskLabelsRequest,
-  TaskListQuery,
-  UpdateTaskRequest,
-} from '@tasks-platform/contracts';
+import type { AssignTaskRequest, CreateTaskRequest, SetTaskLabelsRequest, TaskListQuery, UpdateTaskRequest } from '@tasks-platform/contracts';
 
+import { requireRole, requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import type { ProjectEntity } from '../projects/projects.types.js';
 import { toTaskResponse } from './tasks.mapper.js';
 import { tasksService } from './tasks.service.js';
 import type { TaskEntity } from './tasks.types.js';
 
-function getAuthenticatedUserId(req: { auth?: { userId: string } }): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
-
-function getMembershipContext(req: {
-  membership?: { organizationId: string; role: Role };
-}): { organizationId: string; role: Role } {
+function getOrganizationId(req: { membership?: { organizationId: string } }): string {
   if (!req.membership) {
     throw new UnauthorizedError('Missing membership context');
   }
-  return req.membership;
+  return req.membership.organizationId;
 }
 
 function getProject(req: { project?: ProjectEntity }): ProjectEntity {
@@ -48,7 +33,7 @@ function getTask(req: { task?: TaskEntity }): TaskEntity {
 export const tasksController = {
   create: (async (req, res) => {
     const project = getProject(req);
-    const createdById = getAuthenticatedUserId(req);
+    const createdById = requireUserId(req);
     const body = req.body as CreateTaskRequest;
 
     const task = await tasksService.create(project, createdById, body);
@@ -64,8 +49,8 @@ export const tasksController = {
   }) satisfies RequestHandler,
 
   listAssignedToMe: (async (req, res) => {
-    const { organizationId } = getMembershipContext(req);
-    const userId = getAuthenticatedUserId(req);
+    const organizationId = getOrganizationId(req);
+    const userId = requireUserId(req);
     const query = req.query as unknown as TaskListQuery;
 
     const page = await tasksService.listAssignedToUser(organizationId, userId, query);
@@ -79,18 +64,19 @@ export const tasksController = {
 
   update: (async (req, res) => {
     const task = getTask(req);
-    const { role } = getMembershipContext(req);
-    const actorId = getAuthenticatedUserId(req);
+    const organizationId = getOrganizationId(req);
+    const role = requireRole(req);
+    const actorId = requireUserId(req);
     const body = req.body as UpdateTaskRequest;
 
-    const updated = await tasksService.update(task, role, actorId, body);
+    const updated = await tasksService.update(task, role, actorId, organizationId, body);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 
   remove: (async (req, res) => {
     const task = getTask(req);
-    const { role } = getMembershipContext(req);
-    const actorId = getAuthenticatedUserId(req);
+    const role = requireRole(req);
+    const actorId = requireUserId(req);
 
     await tasksService.remove(task, role, actorId);
     res.status(204).send();
@@ -98,8 +84,9 @@ export const tasksController = {
 
   assign: (async (req, res) => {
     const task = getTask(req);
-    const { organizationId, role } = getMembershipContext(req);
-    const actorId = getAuthenticatedUserId(req);
+    const organizationId = getOrganizationId(req);
+    const role = requireRole(req);
+    const actorId = requireUserId(req);
     const body = req.body as AssignTaskRequest;
 
     const updated = await tasksService.assign(task, role, actorId, organizationId, body.userId);
@@ -108,17 +95,19 @@ export const tasksController = {
 
   unassign: (async (req, res) => {
     const task = getTask(req);
-    const { role } = getMembershipContext(req);
-    const actorId = getAuthenticatedUserId(req);
+    const organizationId = getOrganizationId(req);
+    const role = requireRole(req);
+    const actorId = requireUserId(req);
 
-    const updated = await tasksService.unassign(task, role, actorId);
+    const updated = await tasksService.unassign(task, role, actorId, organizationId);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 
   setLabels: (async (req, res) => {
     const task = getTask(req);
-    const { organizationId, role } = getMembershipContext(req);
-    const actorId = getAuthenticatedUserId(req);
+    const organizationId = getOrganizationId(req);
+    const role = requireRole(req);
+    const actorId = requireUserId(req);
     const body = req.body as SetTaskLabelsRequest;
 
     const updated = await tasksService.setLabels(task, role, actorId, organizationId, body.labelIds);

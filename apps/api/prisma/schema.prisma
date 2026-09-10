@@ -20,14 +20,16 @@ model User {
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  memberships      Membership[]
-  refreshTokens    RefreshToken[]
-  invitationsSent  Invitation[]
-  projectsCreated  Project[]
-  tasksCreated     Task[]         @relation("TaskCreator")
-  tasksAssigned    Task[]         @relation("TaskAssignee")
-  comments         Comment[]
-  taskActivities   TaskActivity[]
+  memberships          Membership[]
+  refreshTokens        RefreshToken[]
+  invitationsSent      Invitation[]
+  projectsCreated      Project[]
+  tasksCreated         Task[]            @relation("TaskCreator")
+  tasksAssigned        Task[]            @relation("TaskAssignee")
+  comments             Comment[]
+  taskActivities       TaskActivity[]
+  webhookEndpoints     WebhookEndpoint[]
+  apiKeys              ApiKey[]
 }
 
 model Organization {
@@ -38,10 +40,13 @@ model Organization {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  memberships Membership[]
-  invitations Invitation[]
-  projects    Project[]
-  labels      Label[]
+  memberships      Membership[]
+  invitations      Invitation[]
+  projects         Project[]
+  labels           Label[]
+  outboxEvents     OutboxEvent[]
+  webhookEndpoints WebhookEndpoint[]
+  apiKeys          ApiKey[]
 }
 
 enum Role {
@@ -263,16 +268,133 @@ enum TaskActivityType {
   COMMENT_ADDED
 }
 
+// `actorId` (a User) and `apiKeyActorId` (an ApiKey) are mutually exclusive:
+// an entry is caused by exactly one of a human, authenticated with a JWT, or
+// a machine, authenticated with an API key -- never both, never neither
+// (PHASE.md decision 9, Phase 4). Both columns are nullable because Prisma's
+// schema language has no CHECK constraint syntax; the actual constraint is
+// hand-written in the migration SQL, same approach as every other
+// not-representable constraint so far (Invitation's partial unique index,
+// Label's functional unique index). Every entry that predates this phase has
+// `actorId` set (they were all written before API keys existed), so the
+// migration backfills nothing -- both new columns just start out nullable
+// with the existing data already satisfying the constraint.
 model TaskActivity {
-  id        String           @id @default(uuid())
-  taskId    String
-  actorId   String
-  type      TaskActivityType
-  changes   Json
-  createdAt DateTime         @default(now())
+  id            String           @id @default(uuid())
+  taskId        String
+  actorId       String?
+  apiKeyActorId String?
+  type          TaskActivityType
+  changes       Json
+  createdAt     DateTime         @default(now())
 
-  task  Task @relation(fields: [taskId], references: [id])
-  actor User @relation(fields: [actorId], references: [id])
+  task        Task    @relation(fields: [taskId], references: [id])
+  actor       User?   @relation(fields: [actorId], references: [id])
+  apiKeyActor ApiKey? @relation(fields: [apiKeyActorId], references: [id])
 
   @@index([taskId, createdAt])
+}
+
+// One row per domain change that should be publishable as an outbound
+// webhook event, written in the SAME transaction as the TaskActivity entry
+// it mirrors (see activity.service.ts and docs/adr/0009-outbox-pattern.md).
+// `type` matches a TaskActivityType name; `payload` is already the shape
+// that goes out over the wire to a subscriber. `dispatchedAt` is set by the
+// worker's dispatcher once it has claimed the row and hands it to the queue
+// -- it is not "delivered", just "handed off", so `attempts` here counts
+// dispatch attempts, not per-webhook delivery attempts (see WebhookDelivery
+// for those).
+model OutboxEvent {
+  id             String    @id @default(uuid())
+  organizationId String
+  type           String
+  payload        Json
+  createdAt      DateTime  @default(now())
+  dispatchedAt   DateTime?
+  attempts       Int       @default(0)
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  deliveries   WebhookDelivery[]
+
+  @@index([dispatchedAt, createdAt])
+}
+
+// `eventTypes` is the subscription list: which OutboxEvent.type values this
+// endpoint wants. `secret` is returned to the caller only at creation and at
+// rotation time (see webhooks.service.ts) -- every other read of this row
+// (list, get) must map it away before it reaches a response.
+// `consecutiveFailures` is reset to 0 by any successful delivery and
+// increments once per delivery that exhausts all of its retry attempts
+// (PHASE.md decision 5); at WEBHOOK_MAX_CONSECUTIVE_FAILURES (20 by
+// default) the endpoint disables itself and records why.
+model WebhookEndpoint {
+  id                  String    @id @default(uuid())
+  organizationId      String
+  url                 String
+  secret              String
+  eventTypes          String[]
+  enabled             Boolean   @default(true)
+  disabledReason      String?
+  consecutiveFailures Int       @default(0)
+  createdById         String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  createdBy    User              @relation(fields: [createdById], references: [id])
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId])
+}
+
+// One row per delivery attempt (not per event): a 5-attempt retry chain for
+// the same OutboxEvent to the same endpoint produces up to 5 rows, one per
+// `attempt` number, so a developer debugging an integration can see exactly
+// what each attempt returned. `responseSnippet` is deliberately truncated by
+// the writer (see webhook-delivery.processor.ts) -- this column is for
+// debugging, not for storing an unbounded response body.
+model WebhookDelivery {
+  id              String    @id @default(uuid())
+  endpointId      String
+  outboxEventId   String
+  attempt         Int
+  statusCode      Int?
+  responseSnippet String?
+  error           String?
+  durationMs      Int
+  createdAt       DateTime  @default(now())
+
+  endpoint    WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  outboxEvent OutboxEvent     @relation(fields: [outboxEventId], references: [id])
+
+  @@index([endpointId, createdAt])
+}
+
+// `prefix` (visible, e.g. "tp_live_ab12cd34") identifies the key in a
+// listing without revealing it; `keyHash` is the SHA-256 of the full key
+// (prefix + random part), same hashing primitive as refresh/invitation
+// tokens (see shared/security/tokens.ts hashToken). The full key is shown to
+// the caller exactly once, at creation (api-keys.service.ts never returns
+// it again). `scopes` are Permission strings, checked against the same
+// matrix vocabulary as roles but resolved independently of any role -- see
+// shared/authorization/api-key-scopes.ts for why this phase only allows a
+// read-only subset.
+model ApiKey {
+  id             String    @id @default(uuid())
+  organizationId String
+  name           String
+  prefix         String
+  keyHash        String    @unique
+  scopes         String[]
+  createdById    String
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  createdBy      User           @relation(fields: [createdById], references: [id])
+  taskActivities TaskActivity[]
+
+  @@index([organizationId])
 }

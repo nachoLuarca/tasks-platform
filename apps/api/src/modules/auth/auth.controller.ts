@@ -7,6 +7,7 @@ import type {
   RegisterRequest,
 } from '@tasks-platform/contracts';
 
+import { requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { usersService } from '../users/users.service.js';
 import { toUserProfile } from '../users/users.mapper.js';
@@ -22,12 +23,7 @@ function getRequestMeta(req: Request): RequestMeta {
 }
 
 /** Only ever called on routes behind `requireAuth`, which always sets this. */
-function getAuthenticatedUserId(req: Request): string {
-  if (!req.auth) {
-    throw new UnauthorizedError('Missing authentication context');
-  }
-  return req.auth.userId;
-}
+const getAuthenticatedUserId = requireUserId;
 
 export const authController = {
   register: (async (req, res) => {
