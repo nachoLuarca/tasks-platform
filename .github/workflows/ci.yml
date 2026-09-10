@@ -33,6 +33,16 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+        options: >-
+          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8025/readyz"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2

@@ -43,7 +43,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      # The dev target rebuilds contracts/shared and runs `prisma generate`
+      # on every container start before `tsx watch` is even listening (see
+      # the root `dev` script) -- routinely ~60-90s, occasionally more if
+      # corepack has to fetch the pnpm shim. A short start_period makes
+      # Docker count those early failures against `retries` before the
+      # server is actually up, so the container flips to unhealthy and only
+      # self-corrects once a check finally lands after boot. Give it enough
+      # room to boot before any failure counts.
+      start_period: 120s
 
   worker:
     build:
@@ -87,7 +95,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      # See the api service's healthcheck comment above -- same dev-mode
+      # boot chain, same fix.
+      start_period: 120s
 
   db:
     image: postgres:17-alpine
