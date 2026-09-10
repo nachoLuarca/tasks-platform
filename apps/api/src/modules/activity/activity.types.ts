@@ -1,3 +1,5 @@
+import type { Actor } from '../../shared/authorization/index.js';
+
 export type TaskActivityType =
   | 'TASK_CREATED'
   | 'STATUS_CHANGED'
@@ -31,19 +33,24 @@ export interface TaskActivityEntity {
  * `organizationId` doesn't land on TaskActivity itself -- it's what lets
  * `record` also write the mirroring OutboxEvent (see activity.service.ts and
  * docs/adr/0009-outbox-pattern.md), which does need it as a top-level
- * column for the dispatcher to filter on. Exactly one of `actorId`/
- * `apiKeyActorId` must be given; every call site in this codebase passes
- * `actorId` (a human triggered it, always, today) -- `apiKeyActorId` exists
- * so the model and mapper are exercised end to end by
- * test/integration/webhooks-and-api-keys.test.ts ("activity log records an
- * API key actor") even though no HTTP route currently produces one, see
- * shared/authorization/api-key-scopes.ts for why.
+ * column for the dispatcher to filter on. `actor` is whoever performed the
+ * change: a member, or an API key writing in its own name (Phase 4.5) --
+ * never the person who created that key.
  */
 export interface RecordActivityInput {
   taskId: string;
   organizationId: string;
-  actorId?: string;
-  apiKeyActorId?: string;
+  actor: Actor;
+  type: TaskActivityType;
+  before: unknown;
+  after: unknown;
+}
+
+/** Row shape for the repository: the actor already split into its two mutually exclusive columns. */
+export interface CreateActivityRowInput {
+  taskId: string;
+  actorId: string | null;
+  apiKeyActorId: string | null;
   type: TaskActivityType;
   before: unknown;
   after: unknown;

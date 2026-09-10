@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { prisma, type DbClient } from '../../shared/db/index.js';
-import type { RecordActivityInput, TaskActivityActor, TaskActivityEntity, TaskActivityType } from './activity.types.js';
+import type { CreateActivityRowInput, TaskActivityActor, TaskActivityEntity, TaskActivityType } from './activity.types.js';
 
 type TaskActivityRow = {
   id: string;
@@ -49,7 +49,7 @@ export const activityRepository = {
    * describes (see activity.service.ts) -- never called against the bare
    * `prisma` client, so an entry can never outlive the change it records.
    */
-  async record(input: RecordActivityInput, client: DbClient): Promise<void> {
+  async record(input: CreateActivityRowInput, client: DbClient): Promise<void> {
     if ((input.actorId ? 1 : 0) + (input.apiKeyActorId ? 1 : 0) !== 1) {
       throw new Error('activityRepository.record requires exactly one of actorId / apiKeyActorId');
     }

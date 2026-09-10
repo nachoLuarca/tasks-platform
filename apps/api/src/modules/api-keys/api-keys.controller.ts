@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 
 import type { CreateApiKeyRequest } from '@tasks-platform/contracts';
 
-import { requireUserId } from '../../shared/authorization/index.js';
+import { requireUserActor } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { toApiKeyCreatedResponse, toApiKeyResponse } from './api-keys.mapper.js';
 import { apiKeysService } from './api-keys.service.js';
@@ -17,12 +17,12 @@ function getOrganizationId(req: { membership?: { organizationId: string } }): st
 export const apiKeysController = {
   create: (async (req, res) => {
     const organizationId = getOrganizationId(req);
-    const createdById = requireUserId(req);
+    const creator = requireUserActor(req);
     const body = req.body as CreateApiKeyRequest;
 
     const { apiKey, key } = await apiKeysService.create(
       organizationId,
-      createdById,
+      creator,
       body.name,
       body.scopes,
       body.expiresAt ? new Date(body.expiresAt) : undefined,

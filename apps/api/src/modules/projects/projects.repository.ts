@@ -16,7 +16,8 @@ function toEntity(row: {
   description: string | null;
   status: string;
   taskCounter: number;
-  createdById: string;
+  createdById: string | null;
+  createdByApiKeyId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): ProjectEntity {

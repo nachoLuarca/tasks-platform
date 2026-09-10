@@ -8,6 +8,8 @@ export function toCommentResponse(comment: CommentEntity): CommentResponse {
     taskId: comment.taskId,
     authorId: comment.authorId,
     author: comment.author,
+    authorApiKeyId: comment.authorApiKeyId,
+    authorApiKey: comment.authorApiKey,
     body: comment.body,
     editedAt: comment.editedAt ? comment.editedAt.toISOString() : null,
     createdAt: comment.createdAt.toISOString(),

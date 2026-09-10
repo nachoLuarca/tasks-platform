@@ -178,22 +178,32 @@ enum TaskPriority {
 // incremented and read inside the same transaction that creates a task (see
 // tasks.repository.ts), so it doubles as "the last number handed out" -- it
 // is never decremented, so numbers are never reused after a delete.
+//
+// The creator is exactly one of a user (`createdById`) or an API key
+// (`createdByApiKeyId`) -- a key is never attributed to the person who made
+// it (PHASE.md decisions 6-7, Phase 4.5). Same dual-actor shape as
+// TaskActivity, enforced by a hand-written CHECK in migration
+// 20260910160100_allow_api_key_authorship. Both FKs stay RESTRICT: the
+// optional relation must not fall back to Prisma's SET NULL default, which
+// would break the CHECK the moment either side were deleted.
 model Project {
-  id             String        @id @default(uuid())
-  organizationId String
-  key            String
-  name           String
-  description    String?
-  status         ProjectStatus @default(ACTIVE)
-  taskCounter    Int           @default(0)
-  createdById    String
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  deletedAt      DateTime?
+  id                String        @id @default(uuid())
+  organizationId    String
+  key               String
+  name              String
+  description       String?
+  status            ProjectStatus @default(ACTIVE)
+  taskCounter       Int           @default(0)
+  createdById       String?
+  createdByApiKeyId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  createdBy    User         @relation(fields: [createdById], references: [id])
-  tasks        Task[]
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdBy       User?        @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdByApiKey ApiKey?      @relation(fields: [createdByApiKeyId], references: [id], onDelete: Restrict)
+  tasks           Task[]
 
   @@unique([organizationId, key])
 }
@@ -201,27 +211,32 @@ model Project {
 // "version" implements optimistic locking: every update must include the
 // version it read, and the update only succeeds if it still matches the row
 // in the database (see docs/adr/0007-optimistic-locking.md).
+//
+// Creator is exactly one of `createdById` / `createdByApiKeyId`, same rule
+// and same CHECK/RESTRICT reasoning as Project above.
 model Task {
-  id          String       @id @default(uuid())
-  projectId   String
-  number      Int
-  title       String
-  description String?
-  status      TaskStatus   @default(TODO)
-  priority    TaskPriority @default(MEDIUM)
-  assigneeId  String?
-  createdById String
-  dueDate     DateTime?
-  completedAt DateTime?
-  version     Int          @default(1)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  deletedAt   DateTime?
+  id                String       @id @default(uuid())
+  projectId         String
+  number            Int
+  title             String
+  description       String?
+  status            TaskStatus   @default(TODO)
+  priority          TaskPriority @default(MEDIUM)
+  assigneeId        String?
+  createdById       String?
+  createdByApiKeyId String?
+  dueDate           DateTime?
+  completedAt       DateTime?
+  version           Int          @default(1)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deletedAt         DateTime?
 
-  project    Project        @relation(fields: [projectId], references: [id])
-  assignee   User?          @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  createdBy  User           @relation("TaskCreator", fields: [createdById], references: [id])
-  comments   Comment[]
+  project         Project        @relation(fields: [projectId], references: [id])
+  assignee        User?          @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy       User?          @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdByApiKey ApiKey?        @relation(fields: [createdByApiKeyId], references: [id], onDelete: Restrict)
+  comments        Comment[]
   taskLabels TaskLabel[]
   activities TaskActivity[]
 
@@ -234,18 +249,23 @@ model Task {
 // Soft-deleted so a removed comment disappears from the thread while its
 // TaskActivity "commented" entry (which never references the Comment row)
 // stays in the log, per PHASE.md decision 9.
+//
+// Author is exactly one of `authorId` / `authorApiKeyId`, same rule and same
+// CHECK/RESTRICT reasoning as Project above.
 model Comment {
-  id        String    @id @default(uuid())
-  taskId    String
-  authorId  String
-  body      String
-  editedAt  DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  id             String    @id @default(uuid())
+  taskId         String
+  authorId       String?
+  authorApiKeyId String?
+  body           String
+  editedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 
-  task   Task @relation(fields: [taskId], references: [id])
-  author User @relation(fields: [authorId], references: [id])
+  task         Task    @relation(fields: [taskId], references: [id])
+  author       User?   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  authorApiKey ApiKey? @relation(fields: [authorApiKeyId], references: [id], onDelete: Restrict)
 
   @@index([taskId, createdAt])
 }
@@ -413,8 +433,8 @@ model WebhookDelivery {
 // the caller exactly once, at creation (api-keys.service.ts never returns
 // it again). `scopes` are Permission strings, checked against the same
 // matrix vocabulary as roles but resolved independently of any role -- see
-// shared/authorization/api-key-scopes.ts for why this phase only allows a
-// read-only subset.
+// shared/authorization/api-key-scopes.ts for the grantable read and write
+// catalog. A key can author projects, tasks and comments in its own name.
 model ApiKey {
   id             String    @id @default(uuid())
   organizationId String
@@ -428,9 +448,12 @@ model ApiKey {
   revokedAt      DateTime?
   createdAt      DateTime  @default(now())
 
-  organization   Organization   @relation(fields: [organizationId], references: [id])
-  createdBy      User           @relation(fields: [createdById], references: [id])
-  taskActivities TaskActivity[]
+  organization    Organization   @relation(fields: [organizationId], references: [id])
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  taskActivities  TaskActivity[]
+  projectsCreated Project[]
+  tasksCreated    Task[]
+  comments        Comment[]
 
   @@index([organizationId])
 }

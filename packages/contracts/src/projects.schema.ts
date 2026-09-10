@@ -39,7 +39,9 @@ export const projectResponseSchema = z.object({
   description: z.string().nullable(),
   status: projectStatusSchema,
   taskCounter: z.number().int(),
-  createdById: z.string().uuid(),
+  /** Exactly one of `createdById` (a user) / `createdByApiKeyId` (an API key) is non-null. */
+  createdById: z.string().uuid().nullable(),
+  createdByApiKeyId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

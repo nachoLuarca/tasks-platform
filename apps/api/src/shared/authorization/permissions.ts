@@ -41,6 +41,11 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number];
 
+/** Narrows untrusted input (e.g. the scopes in an API key creation request) to the known vocabulary. */
+export function isPermission(value: string): value is Permission {
+  return (PERMISSIONS as readonly string[]).includes(value);
+}
+
 /**
  * Suggested repartition from PHASE.md, with adjustments:
  *
@@ -98,6 +103,10 @@ export type Permission = (typeof PERMISSIONS)[number];
  *   these two -- a key managing other keys or other webhooks would be a
  *   self-referential privilege-escalation path with no legitimate use case
  *   this phase needs to support.
+ * - Phase 4.5: whoever creates an API key must themselves hold every scope
+ *   they grant it, checked against this same matrix in
+ *   api-keys.service.ts -- the matrix is the ceiling for a key, never the
+ *   catalog alone.
  */
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   OWNER: [

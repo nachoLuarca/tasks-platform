@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 
 import type { AssignTaskRequest, CreateTaskRequest, SetTaskLabelsRequest, TaskListQuery, UpdateTaskRequest } from '@tasks-platform/contracts';
 
-import { requireRole, requireUserId } from '../../shared/authorization/index.js';
+import { requireActor, requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import type { ProjectEntity } from '../projects/projects.types.js';
 import { toTaskResponse } from './tasks.mapper.js';
@@ -33,10 +33,10 @@ function getTask(req: { task?: TaskEntity }): TaskEntity {
 export const tasksController = {
   create: (async (req, res) => {
     const project = getProject(req);
-    const createdById = requireUserId(req);
+    const actor = requireActor(req);
     const body = req.body as CreateTaskRequest;
 
-    const task = await tasksService.create(project, createdById, body);
+    const task = await tasksService.create(project, actor, body);
     res.status(201).json(toTaskResponse(task));
   }) satisfies RequestHandler,
 
@@ -48,6 +48,7 @@ export const tasksController = {
     res.status(200).json({ data: page.data.map(toTaskResponse), nextCursor: page.nextCursor });
   }) satisfies RequestHandler,
 
+  /** "Assigned to me" only has a meaning for a person: an API key gets a 403 from requireUserId. */
   listAssignedToMe: (async (req, res) => {
     const organizationId = getOrganizationId(req);
     const userId = requireUserId(req);
@@ -65,52 +66,47 @@ export const tasksController = {
   update: (async (req, res) => {
     const task = getTask(req);
     const organizationId = getOrganizationId(req);
-    const role = requireRole(req);
-    const actorId = requireUserId(req);
+    const actor = requireActor(req);
     const body = req.body as UpdateTaskRequest;
 
-    const updated = await tasksService.update(task, role, actorId, organizationId, body);
+    const updated = await tasksService.update(task, actor, organizationId, body);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 
   remove: (async (req, res) => {
     const task = getTask(req);
-    const role = requireRole(req);
-    const actorId = requireUserId(req);
+    const actor = requireActor(req);
 
-    await tasksService.remove(task, role, actorId);
+    await tasksService.remove(task, actor);
     res.status(204).send();
   }) satisfies RequestHandler,
 
   assign: (async (req, res) => {
     const task = getTask(req);
     const organizationId = getOrganizationId(req);
-    const role = requireRole(req);
-    const actorId = requireUserId(req);
+    const actor = requireActor(req);
     const body = req.body as AssignTaskRequest;
 
-    const updated = await tasksService.assign(task, role, actorId, organizationId, body.userId);
+    const updated = await tasksService.assign(task, actor, organizationId, body.userId);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 
   unassign: (async (req, res) => {
     const task = getTask(req);
     const organizationId = getOrganizationId(req);
-    const role = requireRole(req);
-    const actorId = requireUserId(req);
+    const actor = requireActor(req);
 
-    const updated = await tasksService.unassign(task, role, actorId, organizationId);
+    const updated = await tasksService.unassign(task, actor, organizationId);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 
   setLabels: (async (req, res) => {
     const task = getTask(req);
     const organizationId = getOrganizationId(req);
-    const role = requireRole(req);
-    const actorId = requireUserId(req);
+    const actor = requireActor(req);
     const body = req.body as SetTaskLabelsRequest;
 
-    const updated = await tasksService.setLabels(task, role, actorId, organizationId, body.labelIds);
+    const updated = await tasksService.setLabels(task, actor, organizationId, body.labelIds);
     res.status(200).json(toTaskResponse(updated));
   }) satisfies RequestHandler,
 };

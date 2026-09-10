@@ -15,8 +15,11 @@ export type UpdateCommentRequest = z.infer<typeof updateCommentRequestSchema>;
 export const commentResponseSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
-  authorId: z.string().uuid(),
-  author: z.object({ id: z.string().uuid(), name: z.string(), email: z.string() }),
+  /** Exactly one author: a user (`authorId` + `author`) or an API key (`authorApiKeyId` + `authorApiKey`). */
+  authorId: z.string().uuid().nullable(),
+  author: z.object({ id: z.string().uuid(), name: z.string(), email: z.string() }).nullable(),
+  authorApiKeyId: z.string().uuid().nullable(),
+  authorApiKey: z.object({ id: z.string().uuid(), name: z.string(), prefix: z.string() }).nullable(),
   body: z.string(),
   editedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

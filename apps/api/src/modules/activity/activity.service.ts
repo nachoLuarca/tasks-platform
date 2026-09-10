@@ -1,3 +1,4 @@
+import { actorColumns } from '../../shared/authorization/index.js';
 import type { DbClient } from '../../shared/db/index.js';
 import { buildPage, decodeCursor, type Page } from '../../shared/pagination/index.js';
 import { outboxRepository } from '../outbox/outbox.repository.js';
@@ -23,7 +24,11 @@ export const activityService = {
    * worth notifying an external system about.
    */
   async record(input: RecordActivityInput, client: DbClient): Promise<void> {
-    await activityRepository.record(input, client);
+    const { userId, apiKeyId } = actorColumns(input.actor);
+    await activityRepository.record(
+      { taskId: input.taskId, actorId: userId, apiKeyActorId: apiKeyId, type: input.type, before: input.before, after: input.after },
+      client,
+    );
     await outboxRepository.record(
       {
         organizationId: input.organizationId,
@@ -32,9 +37,9 @@ export const activityService = {
           taskId: input.taskId,
           type: input.type,
           changes: { before: input.before, after: input.after },
-          actor: input.actorId
-            ? { type: 'USER', id: input.actorId }
-            : { type: 'API_KEY', id: input.apiKeyActorId },
+          actor: input.actor.type === 'user'
+            ? { type: 'USER', id: input.actor.userId }
+            : { type: 'API_KEY', id: input.actor.apiKeyId },
           createdAt: new Date().toISOString(),
         },
       },

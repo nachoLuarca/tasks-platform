@@ -2,13 +2,11 @@ import type { RequestHandler } from 'express';
 
 import type { CreateProjectRequest, ProjectListQuery, UpdateProjectRequest } from '@tasks-platform/contracts';
 
-import { requireUserId } from '../../shared/authorization/index.js';
+import { requireActor } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { toProjectResponse } from './projects.mapper.js';
 import { projectsService } from './projects.service.js';
 import type { ProjectEntity } from './projects.types.js';
-
-const getAuthenticatedUserId = requireUserId;
 
 function getMembershipContext(req: { membership?: { organizationId: string } }): { organizationId: string } {
   if (!req.membership) {
@@ -27,10 +25,10 @@ function getProject(req: { project?: ProjectEntity }): ProjectEntity {
 export const projectsController = {
   create: (async (req, res) => {
     const { organizationId } = getMembershipContext(req);
-    const createdById = getAuthenticatedUserId(req);
+    const actor = requireActor(req);
     const body = req.body as CreateProjectRequest;
 
-    const project = await projectsService.create(organizationId, createdById, body.key, body.name, body.description);
+    const project = await projectsService.create(organizationId, actor, body.key, body.name, body.description);
     res.status(201).json(toProjectResponse(project));
   }) satisfies RequestHandler,
 

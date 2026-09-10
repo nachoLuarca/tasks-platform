@@ -22,7 +22,9 @@ export interface TaskEntity {
   priority: TaskPriority;
   assigneeId: string | null;
   assignee: TaskAssignee | null;
-  createdById: string;
+  /** Exactly one of the two is non-null: the creating user, or the creating API key. */
+  createdById: string | null;
+  createdByApiKeyId: string | null;
   dueDate: Date | null;
   completedAt: Date | null;
   version: number;
@@ -38,7 +40,8 @@ export interface CreateTaskInput {
   priority: TaskPriority;
   assigneeId?: string;
   dueDate?: Date;
-  createdById: string;
+  createdById: string | null;
+  createdByApiKeyId: string | null;
 }
 
 export interface UpdateTaskInput {
