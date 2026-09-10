@@ -1,11 +1,20 @@
 import { Worker } from 'bullmq';
-import { createQueueConnection, prisma, redis, QUEUE_NAMES, type WebhookDeliveryJobData, type EmailJobData } from '@tasks-platform/shared';
+import {
+  createQueueConnection,
+  prisma,
+  redis,
+  QUEUE_NAMES,
+  type EmailJobData,
+  type PasswordResetRequestJobData,
+  type WebhookDeliveryJobData,
+} from '@tasks-platform/shared';
 
 import { config } from './config/index.js';
 import { startOutboxDispatcher } from './dispatcher/outbox-dispatcher.js';
 import { startHealthServer } from './health-server.js';
 import { logger } from './logger.js';
 import { processEmail } from './processors/email.processor.js';
+import { processPasswordResetRequest } from './processors/password-reset-request.processor.js';
 import { processWebhookDelivery } from './processors/webhook-delivery.processor.js';
 import { recordChainExhausted } from './services/webhook-delivery.service.js';
 
@@ -42,16 +51,28 @@ emailWorker.on('failed', (job, error) => {
   logger.warn({ jobId: job?.id, err: error }, 'Email delivery attempt failed');
 });
 
+// Job data is only ever referenced by id in logs: it's an email address
+// someone typed, which may not even belong to an account.
+const passwordResetRequestWorker = new Worker<PasswordResetRequestJobData>(
+  QUEUE_NAMES.passwordResetRequest,
+  processPasswordResetRequest,
+  { connection: createQueueConnection(), concurrency: 5 },
+);
+
+passwordResetRequestWorker.on('failed', (job, error) => {
+  logger.warn({ jobId: job?.id, err: error }, 'Password reset request processing failed');
+});
+
 const dispatcher = startOutboxDispatcher(config.outboxPollIntervalMs);
 
-logger.info({ port: config.port }, 'Worker started: dispatching outbox, delivering webhooks, sending email');
+logger.info({ port: config.port }, 'Worker started: dispatching outbox, delivering webhooks, sending email, handling password reset requests');
 
 /** Waits for in-flight jobs to finish (bounded by SHUTDOWN_TIMEOUT_MS-equivalent default BullMQ close behavior) before exiting, per PHASE.md's "apagado ordenado". */
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Worker shutting down');
   try {
     await dispatcher.stop();
-    await Promise.all([webhookDeliveryWorker.close(), emailWorker.close()]);
+    await Promise.all([webhookDeliveryWorker.close(), emailWorker.close(), passwordResetRequestWorker.close()]);
     await new Promise<void>((resolve, reject) => {
       healthServer.close((error) => (error ? reject(error) : resolve()));
     });

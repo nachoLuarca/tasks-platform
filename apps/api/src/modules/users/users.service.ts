@@ -37,6 +37,16 @@ export const usersService = {
     return usersRepository.updateName(id, name);
   },
 
+  /**
+   * Sets an already-hashed password with no current-password check -- only
+   * for callers that authorized the change some other way (password reset,
+   * through a consumed token). The hash is computed by the caller, outside
+   * its transaction, so Argon2's cost doesn't hold database locks.
+   */
+  async replacePasswordHash(id: string, passwordHash: string, client?: DbClient): Promise<void> {
+    await usersRepository.updatePasswordHash(id, passwordHash, client);
+  },
+
   async changePassword(
     id: string,
     currentPassword: string,

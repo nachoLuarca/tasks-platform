@@ -4,6 +4,7 @@ import {
   sharedConfig,
   type EmailVerificationEmailJobData,
   type InvitationEmailJobData,
+  type PasswordResetEmailJobData,
 } from '@tasks-platform/shared';
 
 let transporter: Transporter | undefined;
@@ -88,5 +89,40 @@ export async function sendEmailVerificationEmail(data: EmailVerificationEmailJob
     subject: 'Confirmá tu correo en Tasks Platform',
     text: emailVerificationText(data),
     html: emailVerificationHtml(data),
+  });
+}
+
+function passwordResetText(data: PasswordResetEmailJobData): string {
+  const lifetime = describeLifetime(ACCOUNT_TOKEN_TTL_MS['password-reset']);
+  return [
+    `Hola, ${data.name}.`,
+    '',
+    'Recibimos un pedido para restablecer la contraseña de tu cuenta de Tasks Platform. Elegí una nueva desde este enlace:',
+    data.resetUrl,
+    '',
+    `El enlace vence en ${lifetime} y sirve una sola vez. Al usarlo se cierran todas las sesiones abiertas de tu cuenta, en todos los dispositivos.`,
+    '',
+    'Si no fuiste vos, ignorá este correo: tu contraseña actual sigue funcionando.',
+  ].join('\n');
+}
+
+function passwordResetHtml(data: PasswordResetEmailJobData): string {
+  const lifetime = describeLifetime(ACCOUNT_TOKEN_TTL_MS['password-reset']);
+  return [
+    `<p>Hola, ${escapeHtml(data.name)}.</p>`,
+    '<p>Recibimos un pedido para restablecer la contraseña de tu cuenta de Tasks Platform.</p>',
+    `<p><a href="${escapeHtml(data.resetUrl)}">Elegir una contraseña nueva</a></p>`,
+    `<p>El enlace vence en ${lifetime} y sirve una sola vez. Al usarlo se cierran todas las sesiones abiertas de tu cuenta, en todos los dispositivos.</p>`,
+    '<p>Si no fuiste vos, ignorá este correo: tu contraseña actual sigue funcionando.</p>',
+  ].join('\n');
+}
+
+export async function sendPasswordResetEmail(data: PasswordResetEmailJobData): Promise<void> {
+  await getTransporter().sendMail({
+    from: sharedConfig.smtp.from,
+    to: data.to,
+    subject: 'Restablecé tu contraseña de Tasks Platform',
+    text: passwordResetText(data),
+    html: passwordResetHtml(data),
   });
 }

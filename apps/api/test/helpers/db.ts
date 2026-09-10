@@ -1,4 +1,4 @@
-import { emailQueue, webhookDeliveryQueue } from '@tasks-platform/shared';
+import { emailQueue, passwordResetRequestQueue, webhookDeliveryQueue } from '@tasks-platform/shared';
 
 import { prisma } from '../../src/shared/db/index.js';
 
@@ -43,6 +43,7 @@ export async function resetDatabase(): Promise<void> {
 export async function resetQueues(): Promise<void> {
   await Promise.all([
     emailQueue().obliterate({ force: true }),
+    passwordResetRequestQueue().obliterate({ force: true }),
     webhookDeliveryQueue().obliterate({ force: true }),
   ]);
 }

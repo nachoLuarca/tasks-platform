@@ -23,6 +23,30 @@ export const verifyEmailRequestSchema = z.object({
 });
 export type VerifyEmailRequest = z.infer<typeof verifyEmailRequestSchema>;
 
+export const forgotPasswordRequestSchema = z.object({
+  email: emailSchema,
+});
+export type ForgotPasswordRequest = z.infer<typeof forgotPasswordRequestSchema>;
+
+/** Identical for a registered and an unregistered address -- by design, see docs/adr/0011-account-recovery.md. */
+export const forgotPasswordResponseSchema = z.object({
+  message: z.string(),
+});
+export type ForgotPasswordResponse = z.infer<typeof forgotPasswordResponseSchema>;
+
+export const resetPasswordRequestSchema = z.object({
+  token: accountTokenSchema,
+  newPassword: passwordSchema,
+});
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
+
+/** Only ever returned for a usable token; an unknown, used or expired one is a 404. */
+export const resetPasswordTokenStatusResponseSchema = z.object({
+  valid: z.literal(true),
+  expiresAt: z.string().datetime(),
+});
+export type ResetPasswordTokenStatusResponse = z.infer<typeof resetPasswordTokenStatusResponseSchema>;
+
 export const userProfileSchema = z.object({
   id: z.string().uuid(),
   email: emailSchema,

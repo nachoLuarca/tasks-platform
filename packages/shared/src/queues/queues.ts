@@ -10,6 +10,7 @@ import { createQueueConnection } from '../db/index.js';
 export const QUEUE_NAMES = {
   webhookDelivery: 'webhook-delivery',
   email: 'email',
+  passwordResetRequest: 'password-reset-request',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -42,6 +43,13 @@ export const ACCOUNT_EMAIL_JOB_OPTIONS: JobsOptions = {
   removeOnFail: { age: 24 * 60 * 60 },
 };
 
+/**
+ * A password-reset request only carries the address someone typed -- which
+ * may or may not belong to an account, and is personal data either way --
+ * so it gets the same short retention as account emails.
+ */
+export const PASSWORD_RESET_REQUEST_JOB_OPTIONS: JobsOptions = ACCOUNT_EMAIL_JOB_OPTIONS;
+
 let connection: ConnectionOptions | undefined;
 function sharedConnection(): ConnectionOptions {
   connection ??= createQueueConnection();
@@ -70,7 +78,19 @@ export interface EmailVerificationEmailJobData {
   verifyUrl: string;
 }
 
-export type EmailJobData = InvitationEmailJobData | EmailVerificationEmailJobData;
+export interface PasswordResetEmailJobData {
+  template: 'password-reset';
+  to: string;
+  name: string;
+  resetUrl: string;
+}
+
+export type EmailJobData = InvitationEmailJobData | EmailVerificationEmailJobData | PasswordResetEmailJobData;
+
+/** What POST /v1/auth/forgot-password enqueues: just the normalized address, never whether it matched an account. */
+export interface PasswordResetRequestJobData {
+  email: string;
+}
 
 /**
  * Producers (the api for emails, the worker's dispatcher for webhook
@@ -85,4 +105,8 @@ export function webhookDeliveryQueue(): Queue<WebhookDeliveryJobData> {
 
 export function emailQueue(): Queue<EmailJobData> {
   return new Queue<EmailJobData>(QUEUE_NAMES.email, { connection: sharedConnection() });
+}
+
+export function passwordResetRequestQueue(): Queue<PasswordResetRequestJobData> {
+  return new Queue<PasswordResetRequestJobData>(QUEUE_NAMES.passwordResetRequest, { connection: sharedConnection() });
 }

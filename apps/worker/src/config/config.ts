@@ -17,6 +17,7 @@ function loadConfig() {
     ...sharedConfig,
     port: env.WORKER_PORT,
     outboxPollIntervalMs: env.OUTBOX_POLL_INTERVAL_MS,
+    passwordResetMaxPerHour: env.PASSWORD_RESET_MAX_PER_HOUR,
   });
 }
 

@@ -153,7 +153,18 @@ export const authService = {
   },
 
   async logoutAll(userId: string): Promise<void> {
-    await authRepository.revokeAllForUser(userId);
+    await authService.revokeAllSessions(userId);
+  },
+
+  /**
+   * Revokes every refresh token of the user, the caller's own included. Used
+   * by logout-all and by password reset, which passes its transaction so the
+   * revocation commits together with the new password. Access tokens already
+   * issued stay valid until they expire (at most 15 minutes): they're
+   * stateless by design, see docs/adr/0011-account-recovery.md.
+   */
+  async revokeAllSessions(userId: string, client: DbClient = prisma): Promise<void> {
+    await authRepository.revokeAllForUser(userId, client);
   },
 
   /** Used by password change: keeps the session making the request alive. */
