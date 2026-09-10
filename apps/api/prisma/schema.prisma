@@ -22,6 +22,8 @@ model User {
 
   memberships          Membership[]
   refreshTokens        RefreshToken[]
+  verificationTokens   VerificationToken[]
+  passwordResetTokens  PasswordResetToken[]
   invitationsSent      Invitation[]
   projectsCreated      Project[]
   tasksCreated         Task[]            @relation("TaskCreator")
@@ -116,6 +118,40 @@ model RefreshToken {
 
   @@index([familyId])
   @@index([userId])
+}
+
+// Same opaque-token pattern as Invitation: the raw token only ever travels
+// by email, the table keeps its SHA-256 hash (the unique index on tokenHash
+// is also the lookup index). Single use (usedAt) and short-lived (24 hours
+// for verification, 1 hour for password reset -- see docs/adr/0011-account-
+// recovery.md). Both are issued, validated and consumed exclusively through
+// packages/shared/src/account-tokens, which the api and the worker share, so
+// the rules can't drift between the two processes. Cascade on user delete:
+// a token is meaningless without the account it proves control of.
+model VerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 enum ProjectStatus {
