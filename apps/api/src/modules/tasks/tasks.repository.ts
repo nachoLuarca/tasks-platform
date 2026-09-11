@@ -20,7 +20,8 @@ type TaskRow = {
   status: string;
   priority: string;
   assigneeId: string | null;
-  createdById: string;
+  createdById: string | null;
+  createdByApiKeyId: string | null;
   dueDate: Date | null;
   completedAt: Date | null;
   version: number;
@@ -108,6 +109,7 @@ export const tasksRepository = {
         assigneeId: input.assigneeId,
         dueDate: input.dueDate,
         createdById: input.createdById,
+        createdByApiKeyId: input.createdByApiKeyId,
       },
       include: TASK_INCLUDE,
     });

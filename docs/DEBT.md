@@ -161,6 +161,102 @@ ninguna `WebhookDelivery` asociada, y los vuelva a encolar.
 crash exactamente ahi, no un fallo de red comun (esos ya estan cubiertos por
 los reintentos de BullMQ).
 
+## Un access token sigue valido hasta 15 minutos despues de restablecer la contraseña
+
+**Donde:** `apps/api/src/modules/auth/require-auth.middleware.ts` y
+`apps/api/src/modules/password-reset/password-reset.service.ts`.
+
+**Que pasa:** restablecer la contraseña revoca todos los refresh tokens de la
+cuenta, pero los access tokens (JWT de 15 minutos) ya emitidos se siguen
+aceptando hasta que vencen. Un atacante con una sesion robada pierde la
+posibilidad de renovarla, pero conserva el access token que tenga en mano
+durante, como mucho, 15 minutos.
+
+**Por que se hizo asi:** los access tokens son sin estado a proposito (ADR
+0003): se validan sin consultar la base. Cortarlos de inmediato requiere una
+consulta por peticion autenticada. `POST /v1/auth/logout-all` ya tenia este
+mismo limite desde la Fase 1.
+
+**Costo:** hasta 15 minutos de acceso residual para una sesion comprometida
+tras un restablecimiento.
+
+**Como resolverlo cuando se retome:** agregar `User.sessionsValidAfter`,
+fijarlo al restablecer (y en `logout-all`), y rechazar en `requireAuth` todo
+JWT con `iat` anterior, con una cache corta en Redis por usuario para no
+consultar Postgres en cada peticion.
+
+**Prioridad:** media.
+
+## Los scopes de una API key no se revalidan si quien la creo pierde permisos
+
+**Donde:** `apps/api/src/modules/api-keys/api-keys.service.ts` (`create`).
+
+**Que pasa:** que quien crea la key tenga cada scope se comprueba solo al
+crearla. Si despues se degrada o se expulsa a esa persona, la key conserva
+sus scopes, porque pertenece a la organizacion y no a un usuario (decision de
+la Fase 4). Un `ADMIN` degradado a `MEMBER` que guardo la clave sigue
+pudiendo, por ejemplo, editar cualquier tarea a traves de ella.
+
+**Por que se hizo asi:** PHASE.md pide validar al crear, y deja fuera de
+alcance la rotacion de keys. Revocar keys en cascada al cambiar un rol es una
+decision de producto que no estaba tomada.
+
+**Costo:** una via de acceso residual para alguien que perdio privilegios,
+hasta que un `ADMIN`/`OWNER` revoque la key a mano.
+
+**Como resolverlo cuando se retome:** al degradar o expulsar a un miembro,
+revocar (o al menos listar para revision) las keys que creo con scopes que su
+nuevo rol ya no tiene. El vinculo `ApiKey.createdById` ya existe.
+
+**Prioridad:** media.
+
+## El enlace de invitacion todavia lleva el token en el path de la API
+
+**Donde:** `apps/api/src/modules/invitations/invitations.service.ts`
+(`acceptUrl`).
+
+**Que pasa:** los enlaces de verificacion y de recuperacion apuntan al
+cliente web con el token en el fragmento, que nunca llega a un servidor. El
+de invitacion sigue apuntando a `APP_PUBLIC_URL/v1/invitations/<token>`. El
+log de acceso de la API ya enmascara ese segmento (Fase 4.5), pero un proxy
+intermedio o una cabecera `Referer` todavia pueden verlo.
+
+**Por que se hizo asi:** cambiar el formato del enlace de invitacion no
+estaba en el alcance de la Fase 4.5, y todavia no existe el cliente web que
+recibiria el fragmento.
+
+**Costo:** exposicion del token de invitacion en infraestructura intermedia.
+El impacto es limitado: aceptar exige una sesion cuyo correo coincida con el
+invitado.
+
+**Como resolverlo cuando se retome:** cuando exista el cliente web (Fase 7),
+generar el enlace con `buildAccountTokenLink`, o una variante para
+invitaciones, y un `POST` desde la pagina.
+
+**Prioridad:** baja.
+
+## El limite de reenvios de verificacion no es atomico
+
+**Donde:** `apps/api/src/modules/email-verification/email-verification.service.ts`
+(`resend`).
+
+**Que pasa:** el limite cuenta los tokens emitidos en la ultima hora y
+despues emite uno nuevo, en dos pasos. Varias peticiones simultaneas de la
+misma cuenta pueden pasar el conteo antes de que ninguna inserte, y superar
+el limite por una o dos.
+
+**Por que se hizo asi:** contar las filas reales evita estado extra en Redis y
+funciona igual con varias instancias. El desvio posible es minimo y exige una
+sesion valida de esa misma cuenta.
+
+**Costo:** algun correo de verificacion de mas en una rafaga concurrente.
+
+**Como resolverlo cuando se retome:** un bloqueo consultivo por usuario
+(`pg_advisory_xact_lock`) alrededor de contar y emitir, o un contador atomico
+en Redis.
+
+**Prioridad:** baja.
+
 ## Prisma tiene una version mayor disponible
 
 **Donde:** `apps/api/package.json` (`prisma`, `@prisma/client`).

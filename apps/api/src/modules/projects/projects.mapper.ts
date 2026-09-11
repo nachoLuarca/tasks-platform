@@ -12,6 +12,7 @@ export function toProjectResponse(project: ProjectEntity): ProjectResponse {
     status: project.status,
     taskCounter: project.taskCounter,
     createdById: project.createdById,
+    createdByApiKeyId: project.createdByApiKeyId,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
   };

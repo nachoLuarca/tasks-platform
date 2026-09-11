@@ -11,6 +11,7 @@ import {
   signAccessToken,
   verifyPassword,
 } from '../../shared/security/index.js';
+import { emailVerificationService } from '../email-verification/email-verification.service.js';
 import { organizationsService } from '../organizations/organizations.service.js';
 import { usersRepository } from '../users/users.repository.js';
 import { usersService } from '../users/users.service.js';
@@ -81,6 +82,19 @@ export const authService = {
     });
 
     const session = await issueSession(user.id, randomUUID(), meta);
+
+    // After the account is committed, and deliberately not fatal: the
+    // account exists and works whether or not the email could be queued
+    // (verification never gates access), and failing here would turn a
+    // Redis hiccup into a 500 for a registration that actually succeeded --
+    // with a 409 on retry. The user can always ask for a new email through
+    // POST /v1/auth/resend-verification.
+    try {
+      await emailVerificationService.sendVerificationEmail(user);
+    } catch (error) {
+      logger.error({ err: error, userId: user.id }, 'Failed to queue the verification email after registration');
+    }
+
     return { user, session };
   },
 
@@ -139,7 +153,18 @@ export const authService = {
   },
 
   async logoutAll(userId: string): Promise<void> {
-    await authRepository.revokeAllForUser(userId);
+    await authService.revokeAllSessions(userId);
+  },
+
+  /**
+   * Revokes every refresh token of the user, the caller's own included. Used
+   * by logout-all and by password reset, which passes its transaction so the
+   * revocation commits together with the new password. Access tokens already
+   * issued stay valid until they expire (at most 15 minutes): they're
+   * stateless by design, see docs/adr/0011-account-recovery.md.
+   */
+  async revokeAllSessions(userId: string, client: DbClient = prisma): Promise<void> {
+    await authRepository.revokeAllForUser(userId, client);
   },
 
   /** Used by password change: keeps the session making the request alive. */

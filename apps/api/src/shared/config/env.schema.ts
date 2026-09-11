@@ -33,6 +33,13 @@ export const envSchema = z.object({
   RATE_LIMIT_ENABLED: booleanFromString('true'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+
+  // --- Account emails ---
+  // Per-account ceiling on verification emails in any rolling hour, the
+  // one sent at registration included. Unlike RATE_LIMIT_*, this is a
+  // business rule (don't let an account turn the app into a mail cannon
+  // aimed at its own address), so RATE_LIMIT_ENABLED doesn't switch it off.
+  EMAIL_VERIFICATION_MAX_PER_HOUR: z.coerce.number().int().positive().default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;

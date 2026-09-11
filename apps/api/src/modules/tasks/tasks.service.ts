@@ -1,6 +1,6 @@
-import type { Role, TaskListQuery, TaskPriority } from '@tasks-platform/contracts';
+import type { TaskListQuery, TaskPriority } from '@tasks-platform/contracts';
 
-import { canActOnResource, roleHasPermission } from '../../shared/authorization/index.js';
+import { actorColumns, actorHasPermission, canActorActOnResource, type Actor } from '../../shared/authorization/index.js';
 import { prisma } from '../../shared/db/index.js';
 import { ConflictError, ForbiddenError, UnprocessableEntityError } from '../../shared/errors/index.js';
 import { buildPage, decodeCursor, type Page } from '../../shared/pagination/index.js';
@@ -12,9 +12,14 @@ import type { ProjectEntity } from '../projects/projects.types.js';
 import { tasksRepository } from './tasks.repository.js';
 import type { CreateTaskInput, TaskEntity, TaskListFilter } from './tasks.types.js';
 
-/** "Own" per PHASE.md decision 5 (Phase 3): creator or assignee of *this* task. */
-function isOwnTask(task: TaskEntity, userId: string): boolean {
-  return task.createdById === userId || task.assigneeId === userId;
+/**
+ * "Own" per PHASE.md decision 5 (Phase 3): creator or assignee of *this*
+ * task. Only a user can own a task -- an API key is never its assignee, and
+ * even for a task the key itself created, "own" doesn't apply to a machine
+ * credential (PHASE.md decision 6, Phase 4.5).
+ */
+function isOwnTask(task: TaskEntity, actor: Actor): boolean {
+  return actor.type === 'user' && (task.createdById === actor.userId || task.assigneeId === actor.userId);
 }
 
 async function assertAssigneeIsMember(organizationId: string, assigneeId: string): Promise<void> {
@@ -41,12 +46,12 @@ function toListFilter(query: TaskListQuery): TaskListFilter {
 function diffTaskFields(
   before: TaskEntity,
   after: TaskEntity,
-  actorId: string,
+  actor: Actor,
   organizationId: string,
   input: { title?: string; status?: TaskEntity['status']; priority?: TaskPriority; dueDate?: string | null },
 ): RecordActivityInput[] {
   const entries: RecordActivityInput[] = [];
-  const base = { taskId: after.id, actorId, organizationId };
+  const base = { taskId: after.id, actor, organizationId };
 
   if (input.title !== undefined && input.title !== before.title) {
     entries.push({ ...base, type: 'TITLE_CHANGED', before: before.title, after: after.title });
@@ -68,15 +73,20 @@ function diffTaskFields(
 }
 
 export const tasksService = {
+  /**
+   * `actor` becomes the task's creator: a user in `createdById`, or an API
+   * key in `createdByApiKeyId` -- never the person who created that key.
+   */
   async create(
     project: ProjectEntity,
-    createdById: string,
+    actor: Actor,
     input: { title: string; description?: string; priority: TaskPriority; assigneeId?: string; dueDate?: string },
   ): Promise<TaskEntity> {
     if (input.assigneeId) {
       await assertAssigneeIsMember(project.organizationId, input.assigneeId);
     }
 
+    const creator = actorColumns(actor);
     const createInput: CreateTaskInput = {
       projectId: project.id,
       title: input.title,
@@ -84,7 +94,8 @@ export const tasksService = {
       priority: input.priority,
       assigneeId: input.assigneeId,
       dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
-      createdById,
+      createdById: creator.userId,
+      createdByApiKeyId: creator.apiKeyId,
     };
 
     // The counter claim, the row insert and the TASK_CREATED entry all
@@ -96,7 +107,7 @@ export const tasksService = {
         {
           taskId: task.id,
           organizationId: project.organizationId,
-          actorId: createdById,
+          actor,
           type: 'TASK_CREATED',
           before: null,
           after: { title: task.title, status: task.status },
@@ -135,24 +146,23 @@ export const tasksService = {
   },
 
   /**
-   * `role` and `actorId` decide "own vs any" through the permission matrix
-   * (`canActOnResource`) plus a plain id comparison for ownership -- never a
-   * role comparison. Returns the updated task, or throws 409 on a version
-   * mismatch. The update and its activity entries share one transaction: if
-   * the version is stale, `updateWithVersion` writes nothing and this throws
-   * before a single activity row is written, so a rolled-back/rejected
-   * update never leaves a trace (PHASE.md decision 6) -- see
-   * test/integration/tasks.test.ts "activity log" for the test that proves
-   * this end to end, by forcing a real stale-version 409, not a mock.
+   * `actor` decides "own vs any" through the permission matrix
+   * (`canActorActOnResource`) plus a plain id comparison for ownership --
+   * never a role comparison. Returns the updated task, or throws 409 on a
+   * version mismatch. The update and its activity entries share one
+   * transaction: if the version is stale, `updateWithVersion` writes nothing
+   * and this throws before a single activity row is written, so a
+   * rolled-back/rejected update never leaves a trace (PHASE.md decision 6)
+   * -- see test/integration/tasks.test.ts "activity log" for the test that
+   * proves this end to end, by forcing a real stale-version 409, not a mock.
    */
   async update(
     task: TaskEntity,
-    role: Role,
-    actorId: string,
+    actor: Actor,
     organizationId: string,
     input: { title?: string; description?: string | null; status?: TaskEntity['status']; priority?: TaskPriority; dueDate?: string | null; version: number },
   ): Promise<TaskEntity> {
-    if (!canActOnResource(role, 'task:update:any', 'task:update:own', isOwnTask(task, actorId))) {
+    if (!canActorActOnResource(actor, 'task:update:any', 'task:update:own', isOwnTask(task, actor))) {
       throw new ForbiddenError('Missing permission: task:update:own or task:update:any');
     }
 
@@ -176,7 +186,7 @@ export const tasksService = {
         throw new ConflictError('Task was modified by someone else; reload and try again');
       }
 
-      const changes = diffTaskFields(task, updated, actorId, organizationId, input);
+      const changes = diffTaskFields(task, updated, actor, organizationId, input);
       for (const entry of changes) {
         await activityService.record(entry, tx);
       }
@@ -185,26 +195,26 @@ export const tasksService = {
     });
   },
 
-  async remove(task: TaskEntity, role: Role, actorId: string): Promise<void> {
-    if (!canActOnResource(role, 'task:delete:any', 'task:delete:own', isOwnTask(task, actorId))) {
+  async remove(task: TaskEntity, actor: Actor): Promise<void> {
+    if (!canActorActOnResource(actor, 'task:delete:any', 'task:delete:own', isOwnTask(task, actor))) {
       throw new ForbiddenError('Missing permission: task:delete:own or task:delete:any');
     }
     await tasksRepository.softDelete(task.id);
   },
 
   /**
-   * `task:assign` (ADMIN/OWNER) can move the task to anyone. `task:assign:self`
-   * (also granted to MEMBER, Phase 3.5) only lets the caller take an
-   * unassigned task for themself -- not reassign someone else's, and not
-   * hand a task to a third party. See permissions.ts for why this can't be
-   * expressed as a single permission check.
+   * `task:assign` (ADMIN/OWNER, or a key granted it) can move the task to
+   * anyone. `task:assign:self` (also granted to MEMBER, Phase 3.5) only lets
+   * a *user* take an unassigned task for themself -- not reassign someone
+   * else's, and not hand a task to a third party. See permissions.ts for why
+   * this can't be expressed as a single permission check.
    */
-  async assign(task: TaskEntity, role: Role, actorId: string, organizationId: string, assigneeId: string): Promise<TaskEntity> {
-    if (!roleHasPermission(role, 'task:assign')) {
-      if (!roleHasPermission(role, 'task:assign:self')) {
+  async assign(task: TaskEntity, actor: Actor, organizationId: string, assigneeId: string): Promise<TaskEntity> {
+    if (!actorHasPermission(actor, 'task:assign')) {
+      if (!actorHasPermission(actor, 'task:assign:self') || actor.type !== 'user') {
         throw new ForbiddenError('Missing permission: task:assign or task:assign:self');
       }
-      if (assigneeId !== actorId) {
+      if (assigneeId !== actor.userId) {
         throw new ForbiddenError('task:assign:self only lets you assign a task to yourself');
       }
       if (task.assigneeId !== null) {
@@ -217,19 +227,19 @@ export const tasksService = {
     return prisma.$transaction(async (tx) => {
       const updated = await tasksRepository.assign(task.id, assigneeId, tx);
       await activityService.record(
-        { taskId: task.id, organizationId, actorId, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: assigneeId },
+        { taskId: task.id, organizationId, actor, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: assigneeId },
         tx,
       );
       return updated;
     });
   },
 
-  async unassign(task: TaskEntity, role: Role, actorId: string, organizationId: string): Promise<TaskEntity> {
-    if (!roleHasPermission(role, 'task:assign')) {
-      if (!roleHasPermission(role, 'task:assign:self')) {
+  async unassign(task: TaskEntity, actor: Actor, organizationId: string): Promise<TaskEntity> {
+    if (!actorHasPermission(actor, 'task:assign')) {
+      if (!actorHasPermission(actor, 'task:assign:self') || actor.type !== 'user') {
         throw new ForbiddenError('Missing permission: task:assign or task:assign:self');
       }
-      if (task.assigneeId !== actorId) {
+      if (task.assigneeId !== actor.userId) {
         throw new ForbiddenError('task:assign:self only lets you unassign yourself');
       }
     }
@@ -237,7 +247,7 @@ export const tasksService = {
     return prisma.$transaction(async (tx) => {
       const updated = await tasksRepository.assign(task.id, null, tx);
       await activityService.record(
-        { taskId: task.id, organizationId, actorId, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: null },
+        { taskId: task.id, organizationId, actor, type: 'ASSIGNEE_CHANGED', before: task.assigneeId, after: null },
         tx,
       );
       return updated;
@@ -245,12 +255,12 @@ export const tasksService = {
   },
 
   /** Governed by task:update:own/:any (PHASE.md decision 4), not label:manage -- same ownership check as `update`. */
-  async setLabels(task: TaskEntity, role: Role, actorId: string, organizationId: string, labelIds: string[]): Promise<TaskEntity> {
-    if (!canActOnResource(role, 'task:update:any', 'task:update:own', isOwnTask(task, actorId))) {
+  async setLabels(task: TaskEntity, actor: Actor, organizationId: string, labelIds: string[]): Promise<TaskEntity> {
+    if (!canActorActOnResource(actor, 'task:update:any', 'task:update:own', isOwnTask(task, actor))) {
       throw new ForbiddenError('Missing permission: task:update:own or task:update:any');
     }
 
-    await labelsService.setTaskLabels(organizationId, task.id, actorId, labelIds);
+    await labelsService.setTaskLabels(organizationId, task.id, actor, labelIds);
     const updated = await tasksRepository.findById(task.id, task.projectId);
     if (!updated) {
       throw new ConflictError('Task was deleted while its labels were being updated');

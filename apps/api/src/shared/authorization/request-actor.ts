@@ -1,6 +1,7 @@
 import type { Role } from '@tasks-platform/contracts';
 
 import { ForbiddenError, UnauthorizedError } from '../errors/index.js';
+import type { Actor, UserActor } from './actor.js';
 import type { Permission } from './permissions.js';
 
 /**
@@ -15,13 +16,11 @@ export type AuthContext =
   | { type: 'apiKey'; apiKeyId: string; organizationId: string; scopes: readonly Permission[] };
 
 /**
- * Every controller that needs "the current user" (to record as a task's
- * creator, a comment's author, or to resolve "me") calls this instead of
- * reading `req.auth.userId` directly. An API key is a valid `req.auth`, but
- * it isn't a user -- see api-key-scopes.ts for why no API key scope reaches
- * an endpoint that would need one anyway; this is the defense-in-depth
- * backstop for that invariant, with a clear error instead of
- * `undefined.userId` if it's ever wrong.
+ * Controllers that need "the current user" as a *person* -- resolving "me",
+ * or an action that only makes sense for a human (accepting an invitation,
+ * editing one's own comment, creating an API key) -- call this. An API key
+ * is a valid `req.auth` but not a user, so it gets a clear 403 here instead
+ * of `undefined.userId` further down.
  */
 export function requireUserId(req: { auth?: AuthContext }): string {
   if (!req.auth) {
@@ -34,18 +33,29 @@ export function requireUserId(req: { auth?: AuthContext }): string {
 }
 
 /**
- * Every controller that needs "the caller's role" (to hand to a service
- * that still checks the matrix itself, e.g. tasksService.update) calls this.
- * `req.membership.role` is `null` exactly when the caller authenticated with
- * an API key (see require-membership.middleware.ts) -- in practice this
- * never actually throws, because every endpoint that reaches a service
- * needing a role is gated by a permission no API key can hold (see
- * api-key-scopes.ts), but the check exists so that invariant is enforced
- * here too, not only trusted by convention.
+ * For organization-scoped writes that either a member or an API key may
+ * perform: hands the service an `Actor` (see actor.ts) carrying the role or
+ * the scopes, so the service decides through the matrix vocabulary without
+ * caring which of the two it got. Only valid behind `requireMembership`.
  */
-export function requireRole(req: { membership?: { role: Role | null } }): Role {
-  if (!req.membership || !req.membership.role) {
-    throw new ForbiddenError('This action requires a member role, not an API key');
+export function requireActor(req: { auth?: AuthContext; membership?: { role: Role | null } }): Actor {
+  if (!req.auth) {
+    throw new UnauthorizedError('Missing authentication context');
   }
-  return req.membership.role;
+  if (req.auth.type === 'apiKey') {
+    return { type: 'apiKey', apiKeyId: req.auth.apiKeyId, scopes: req.auth.scopes };
+  }
+  if (!req.membership?.role) {
+    throw new UnauthorizedError('Missing membership context');
+  }
+  return { type: 'user', userId: req.auth.userId, role: req.membership.role };
+}
+
+/** `requireActor`, restricted to members: for org-scoped actions an API key must never perform itself. */
+export function requireUserActor(req: { auth?: AuthContext; membership?: { role: Role | null } }): UserActor {
+  const actor = requireActor(req);
+  if (actor.type !== 'user') {
+    throw new ForbiddenError('This action requires a user, not an API key');
+  }
+  return actor;
 }

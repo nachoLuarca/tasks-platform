@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 
+import { redactTokenPaths } from '../http/redact-token-paths.js';
 import { getRequestId, logger } from '../logger/index.js';
 import { AppError, NotFoundError, TooManyRequestsError, ValidationError } from './app-error.js';
 
@@ -34,8 +35,9 @@ function toProblemDetails(error: unknown): ProblemDetails {
   };
 }
 
+/** The path ends up in both the response and the warn log below, so token segments are masked first. */
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
-  next(new NotFoundError(`Route ${req.method} ${req.originalUrl} does not exist`));
+  next(new NotFoundError(`Route ${req.method} ${redactTokenPaths(req.originalUrl)} does not exist`));
 };
 
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {

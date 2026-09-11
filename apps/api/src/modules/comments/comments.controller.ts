@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 
 import type { CommentListQuery, CreateCommentRequest, UpdateCommentRequest } from '@tasks-platform/contracts';
 
-import { requireRole, requireUserId } from '../../shared/authorization/index.js';
+import { requireActor, requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import type { TaskEntity } from '../tasks/tasks.types.js';
 import { toCommentResponse } from './comments.mapper.js';
@@ -34,10 +34,10 @@ export const commentsController = {
   create: (async (req, res) => {
     const task = getTask(req);
     const organizationId = getOrganizationId(req);
-    const authorId = requireUserId(req);
+    const actor = requireActor(req);
     const body = req.body as CreateCommentRequest;
 
-    const comment = await commentsService.create(task.id, organizationId, authorId, body.body);
+    const comment = await commentsService.create(task.id, organizationId, actor, body.body);
     res.status(201).json(toCommentResponse(comment));
   }) satisfies RequestHandler,
 
@@ -60,10 +60,9 @@ export const commentsController = {
 
   remove: (async (req, res) => {
     const comment = getComment(req);
-    const role = requireRole(req);
-    const actorId = requireUserId(req);
+    const actor = requireActor(req);
 
-    await commentsService.remove(comment, role, actorId);
+    await commentsService.remove(comment, actor);
     res.status(204).send();
   }) satisfies RequestHandler,
 };

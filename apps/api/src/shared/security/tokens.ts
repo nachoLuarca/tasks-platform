@@ -1,5 +1,6 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
+import { generateOpaqueToken, hashOpaqueToken } from '@tasks-platform/shared';
 import { errors, jwtVerify, SignJWT } from 'jose';
 
 import { config } from '../config/index.js';
@@ -69,14 +70,17 @@ export interface IssuedRefreshToken {
   tokenHash: string;
 }
 
-/** SHA-256 of an opaque token. Only the hash is ever persisted (refresh tokens, invitations). */
+/**
+ * SHA-256 of an opaque token. Only the hash is ever persisted (refresh
+ * tokens, invitations, API keys). Delegates to packages/shared so the api
+ * and the worker -- which issues password-reset tokens -- hash identically.
+ */
 export function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+  return hashOpaqueToken(token);
 }
 
 export function generateRefreshToken(): IssuedRefreshToken {
-  const token = randomBytes(32).toString('base64url');
-  return { token, tokenHash: hashToken(token) };
+  return generateOpaqueToken();
 }
 
 export function hashRefreshToken(token: string): string {
@@ -91,6 +95,5 @@ export interface IssuedInvitationToken {
 }
 
 export function generateInvitationToken(): IssuedInvitationToken {
-  const token = randomBytes(32).toString('base64url');
-  return { token, tokenHash: hashToken(token) };
+  return generateOpaqueToken();
 }

@@ -1,3 +1,4 @@
+import { actorColumns, type Actor } from '../../shared/authorization/index.js';
 import { ConflictError } from '../../shared/errors/index.js';
 import { buildPage, decodeCursor, type Page } from '../../shared/pagination/index.js';
 import { projectsRepository } from './projects.repository.js';
@@ -5,9 +6,10 @@ import type { ProjectEntity } from './projects.types.js';
 import type { ProjectStatus } from '@tasks-platform/contracts';
 
 export const projectsService = {
+  /** `actor` becomes the creator: a user, or an API key in its own name -- never the person behind the key. */
   async create(
     organizationId: string,
-    createdById: string,
+    actor: Actor,
     key: string,
     name: string,
     description?: string,
@@ -16,7 +18,15 @@ export const projectsService = {
     if (existing) {
       throw new ConflictError('A project with this key already exists in the organization');
     }
-    return projectsRepository.create({ organizationId, key, name, description, createdById });
+    const creator = actorColumns(actor);
+    return projectsRepository.create({
+      organizationId,
+      key,
+      name,
+      description,
+      createdById: creator.userId,
+      createdByApiKeyId: creator.apiKeyId,
+    });
   },
 
   async list(

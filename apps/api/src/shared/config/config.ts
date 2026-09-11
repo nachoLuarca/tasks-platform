@@ -53,6 +53,9 @@ function loadConfig() {
       windowMs: env.RATE_LIMIT_WINDOW_MS,
       maxAttempts: env.RATE_LIMIT_MAX_ATTEMPTS,
     }),
+    accountEmails: Object.freeze({
+      verificationMaxPerHour: env.EMAIL_VERIFICATION_MAX_PER_HOUR,
+    }),
   });
 }
 

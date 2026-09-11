@@ -1,4 +1,4 @@
-import { emailQueue, webhookDeliveryQueue } from '@tasks-platform/shared';
+import { emailQueue, passwordResetRequestQueue, webhookDeliveryQueue } from '@tasks-platform/shared';
 
 import { prisma } from '../../src/shared/db/index.js';
 
@@ -9,6 +9,8 @@ export async function resetDatabase(): Promise<void> {
   await prisma.webhookEndpoint.deleteMany();
   await prisma.outboxEvent.deleteMany();
   await prisma.refreshToken.deleteMany();
+  await prisma.verificationToken.deleteMany();
+  await prisma.passwordResetToken.deleteMany();
   await prisma.invitation.deleteMany();
   // TaskActivity before ApiKey: deleting an ApiKey that still has activity
   // rows pointing at it (apiKeyActorId) would SET NULL that column via the
@@ -17,12 +19,14 @@ export async function resetDatabase(): Promise<void> {
   // comment in schema.prisma), that SET NULL would violate the
   // TaskActivity_actor_xor_check constraint.
   await prisma.taskActivity.deleteMany();
-  await prisma.apiKey.deleteMany();
+  // Comments, tasks and projects before ApiKey too: since Phase 4.5 a key
+  // can author them, and those FKs are RESTRICT.
   await prisma.comment.deleteMany();
   await prisma.taskLabel.deleteMany();
   await prisma.task.deleteMany();
   await prisma.label.deleteMany();
   await prisma.project.deleteMany();
+  await prisma.apiKey.deleteMany();
   await prisma.membership.deleteMany();
   await prisma.organization.deleteMany();
   await prisma.user.deleteMany();
@@ -39,6 +43,7 @@ export async function resetDatabase(): Promise<void> {
 export async function resetQueues(): Promise<void> {
   await Promise.all([
     emailQueue().obliterate({ force: true }),
+    passwordResetRequestQueue().obliterate({ force: true }),
     webhookDeliveryQueue().obliterate({ force: true }),
   ]);
 }

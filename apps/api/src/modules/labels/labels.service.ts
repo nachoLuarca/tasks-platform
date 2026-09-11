@@ -1,3 +1,4 @@
+import type { Actor } from '../../shared/authorization/index.js';
 import { prisma } from '../../shared/db/index.js';
 import { ConflictError, UnprocessableEntityError } from '../../shared/errors/index.js';
 import { buildPage, decodeCursor, type Page } from '../../shared/pagination/index.js';
@@ -43,7 +44,7 @@ export const labelsService = {
    * calling this -- this function only validates that the requested labels
    * actually belong to the organization.
    */
-  async setTaskLabels(organizationId: string, taskId: string, actorId: string, labelIds: string[]): Promise<LabelEntity[]> {
+  async setTaskLabels(organizationId: string, taskId: string, actor: Actor, labelIds: string[]): Promise<LabelEntity[]> {
     const uniqueIds = [...new Set(labelIds)];
     const validLabels = await labelsRepository.findManyByIds(organizationId, uniqueIds);
     if (validLabels.length !== uniqueIds.length) {
@@ -57,7 +58,7 @@ export const labelsService = {
         {
           taskId,
           organizationId,
-          actorId,
+          actor,
           type: 'LABELS_CHANGED',
           before: before.map((label) => label.name),
           after: validLabels.map((label) => label.name),

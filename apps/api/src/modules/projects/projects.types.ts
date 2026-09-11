@@ -8,7 +8,9 @@ export interface ProjectEntity {
   description: string | null;
   status: ProjectStatus;
   taskCounter: number;
-  createdById: string;
+  /** Exactly one of the two is non-null: the creating user, or the creating API key. */
+  createdById: string | null;
+  createdByApiKeyId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -18,7 +20,8 @@ export interface CreateProjectInput {
   key: string;
   name: string;
   description?: string;
-  createdById: string;
+  createdById: string | null;
+  createdByApiKeyId: string | null;
 }
 
 export interface UpdateProjectInput {

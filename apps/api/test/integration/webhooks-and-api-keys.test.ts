@@ -2,7 +2,6 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../../src/app.js';
-import { activityService } from '../../src/modules/activity/activity.service.js';
 import { prisma } from '../../src/shared/db/index.js';
 import { registerAndGetSession, type RegisteredSession } from '../helpers/auth.js';
 import { resetDatabase } from '../helpers/db.js';
@@ -118,25 +117,14 @@ describe('activity log actor', () => {
     const apiKeyResponse = await request(app)
       .post(`/v1/organizations/${organizationId}/api-keys`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ name: 'CI bot', scopes: ['task:read'] });
+      .send({ name: 'CI bot', scopes: ['task:read', 'task:update:any'] });
 
-    // No HTTP route lets an API key become a TaskActivity actor today (see
-    // shared/authorization/api-key-scopes.ts) -- this proves the model and
-    // the response mapper support it end to end regardless, by calling the
-    // service directly the way a future write-capable scope would.
-    await prisma.$transaction(async (tx) => {
-      await activityService.record(
-        {
-          taskId: task.body.id,
-          organizationId,
-          apiKeyActorId: apiKeyResponse.body.id as string,
-          type: 'TITLE_CHANGED',
-          before: 'Ship it',
-          after: 'Ship it faster',
-        },
-        tx,
-      );
-    });
+    // A real write through HTTP, authenticated with the key (Phase 4.5).
+    const renamed = await request(app)
+      .patch(`/v1/organizations/${organizationId}/projects/${project.body.id}/tasks/${task.body.id}`)
+      .set('Authorization', `Bearer ${apiKeyResponse.body.key}`)
+      .send({ title: 'Ship it faster', version: task.body.version });
+    expect(renamed.status).toBe(200);
 
     const activityResponse = await request(app)
       .get(`/v1/organizations/${organizationId}/projects/${project.body.id}/tasks/${task.body.id}/activity`)
@@ -184,14 +172,22 @@ describe('api keys', () => {
     expect(JSON.stringify(listResponse.body)).not.toContain(created.body.key as string);
   });
 
-  it('rejects a scope outside the read-only vocabulary an API key is allowed to hold', async () => {
+  it('rejects an unknown scope, and a known one that is never grantable to a key, with 422', async () => {
     const { owner: ownerSession, organizationId } = await setupOrgWithAllRoles();
 
-    const response = await request(app)
+    const unknown = await request(app)
       .post(`/v1/organizations/${organizationId}/api-keys`)
       .set('Authorization', `Bearer ${ownerSession.accessToken}`)
-      .send({ name: 'Too powerful', scopes: ['task:create'] });
-    expect(response.status).toBe(422);
+      .send({ name: 'Typo', scopes: ['task:read', 'task:teleport'] });
+    expect(unknown.status).toBe(422);
+
+    // The OWNER holds webhook:manage, so this isn't the escalation check --
+    // it's the catalog refusing a management permission for any key.
+    const notGrantable = await request(app)
+      .post(`/v1/organizations/${organizationId}/api-keys`)
+      .set('Authorization', `Bearer ${ownerSession.accessToken}`)
+      .send({ name: 'Too powerful', scopes: ['webhook:manage'] });
+    expect(notGrantable.status).toBe(422);
   });
 
   it('authenticates with a valid key, honors its scopes, and rejects revoked/expired/scopeless attempts', async () => {
@@ -219,7 +215,7 @@ describe('api keys', () => {
     expect(listTasks.status).toBe(200);
     expect(listTasks.body.data).toHaveLength(1);
 
-    // ...but can't create one (no task:create scope, ever grantable).
+    // ...but can't create one (this key wasn't granted task:create).
     const createTask = await request(app)
       .post(`/v1/organizations/${organizationId}/projects/${project.body.id}/tasks`)
       .set('Authorization', `Bearer ${key}`)

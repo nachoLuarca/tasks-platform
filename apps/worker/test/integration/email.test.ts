@@ -17,7 +17,7 @@ describe('invitation email', () => {
     const to = `invitee-${Date.now()}@example.com`;
     const acceptUrl = 'http://localhost:3000/v1/invitations/some-real-looking-token';
 
-    await sendInvitationEmail({ to, organizationName: 'Acme Corp', invitedByName: 'Ada Lovelace', role: 'MEMBER', acceptUrl });
+    await sendInvitationEmail({ template: 'invitation', to, organizationName: 'Acme Corp', invitedByName: 'Ada Lovelace', role: 'MEMBER', acceptUrl });
 
     const message = await findMailpitMessageTo(to);
 

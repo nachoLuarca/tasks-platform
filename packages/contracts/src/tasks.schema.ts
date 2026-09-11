@@ -49,7 +49,9 @@ export const taskResponseSchema = z.object({
   priority: taskPrioritySchema,
   assigneeId: z.string().uuid().nullable(),
   assignee: z.object({ id: z.string().uuid(), name: z.string(), email: z.string() }).nullable(),
-  createdById: z.string().uuid(),
+  /** Exactly one of `createdById` (a user) / `createdByApiKeyId` (an API key) is non-null. */
+  createdById: z.string().uuid().nullable(),
+  createdByApiKeyId: z.string().uuid().nullable(),
   dueDate: z.string().datetime().nullable(),
   completedAt: z.string().datetime().nullable(),
   version: z.number().int(),
