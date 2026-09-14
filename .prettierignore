@@ -4,6 +4,10 @@ coverage
 pnpm-lock.yaml
 generated
 
+# Written by release-please; any reformatting would be overwritten on the next release.
+CHANGELOG.md
+.release-please-manifest.json
+
 # Contract documents authored by the user; not reformatted by tooling.
 ARCHITECTURE.md
 PHASE.md
