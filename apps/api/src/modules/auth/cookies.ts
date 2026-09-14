@@ -2,12 +2,12 @@ import type { Request, Response } from 'express';
 
 import { config } from '../../shared/config/index.js';
 import { REFRESH_TOKEN_TTL_DAYS } from '../../shared/security/index.js';
-
-const REFRESH_TOKEN_COOKIE = 'refresh_token';
-// Scoped to the API, not just /v1/auth: POST /v1/users/me/password also
-// needs to read it, to know which session is "the one making the request"
-// and exclude it when revoking the user's other sessions.
-const REFRESH_TOKEN_COOKIE_PATH = '/v1';
+// REFRESH_TOKEN_COOKIE_PATH is scoped to the API, not just /v1/auth: POST
+// /v1/users/me/password also needs to read it, to know which session is "the
+// one making the request" and exclude it when revoking the user's other
+// sessions. Both constants live in auth.types.ts so the OpenAPI document can
+// name the cookie without importing config.
+import { REFRESH_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE_PATH } from './auth.types.js';
 
 export function setRefreshTokenCookie(res: Response, token: string): void {
   res.cookie(REFRESH_TOKEN_COOKIE, token, {
