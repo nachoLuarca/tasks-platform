@@ -13,6 +13,8 @@ onlyBuiltDependencies:
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
+  # Pulled in by swagger-ui-dist; its install script only sends usage telemetry.
+  '@scarf/scarf': false
   argon2: true
   esbuild: true
   msgpackr-extract: true

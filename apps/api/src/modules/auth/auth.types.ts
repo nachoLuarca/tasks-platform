@@ -1,3 +1,7 @@
+/** The refresh token only ever travels in this HttpOnly cookie -- see cookies.ts for why the path is /v1. */
+export const REFRESH_TOKEN_COOKIE = 'refresh_token';
+export const REFRESH_TOKEN_COOKIE_PATH = '/v1';
+
 export interface RefreshTokenEntity {
   id: string;
   userId: string;

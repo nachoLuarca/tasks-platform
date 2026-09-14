@@ -1,121 +1,102 @@
-# Fase actual: 4.5 — Cuenta y credenciales
+# Fase actual: 5 — Release automático y OpenAPI
 
-**Objetivo:** cerrar tres huecos que quedaron abiertos en fases anteriores.
-Verificación de correo, recuperación de contraseña, y API keys que puedan
-escribir y no solo leer.
+**Objetivo:** que versionar y documentar la API dejen de ser pasos manuales.
+Changelog generado desde los commits, tags automáticos, y una especificación
+OpenAPI publicada desde los mismos esquemas Zod que ya validan cada petición.
 
-**Rama:** `feat/email-verification-and-key-scopes`
-**Tag al cerrar:** `v0.7.0`
+**Rama:** `feat/release-automation-and-openapi`
+**Tag al cerrar:** `v0.8.0`
 
-Fase corta. Ahora que el worker envía correo de verdad, estas tres cosas ya no
-tienen excusa para seguir pendientes.
+Última fase antes del despliegue. Corta comparada con las últimas cuatro.
 
 ---
 
 ## Decisiones ya tomadas
 
-1. **La verificación de correo no bloquea el acceso.** Un usuario sin verificar
-   usa la API con normalidad; el estado se expone en su perfil para que un
-   cliente pueda mostrar un aviso. Bloquear el acceso es una decisión de
-   producto que además rompería el usuario de demostración de la Fase 7.
-   Queda documentado como decisión, no como olvido.
+1. **`release-please` gestiona la versión.** Lee los Conventional Commits desde
+   el último release, decide si el próximo es patch, minor o major, mantiene
+   un Pull Request de release siempre abierto con el changelog propuesto, y al
+   mergear ese PR crea el tag y publica el release en GitHub. Los tags dejan
+   de ponerse a mano.
 
-2. **Aceptar una invitación verifica el correo automáticamente.** Quien acepta
-   recibió el enlace en esa dirección: exigirle una verificación adicional
-   sobra.
+2. **De aquí en adelante, un solo tipo de tag.** Hasta ahora se etiquetó cada
+   fase manualmente (`v0.1.0` a `v0.7.0`). Desde esta fase, todos los tags
+   futuros los crea `release-please`. Los tags existentes no se tocan ni se
+   reescriben: quedan como el historial real del proyecto.
 
-3. **Recuperar la contraseña nunca revela si un correo existe.** La solicitud
-   responde siempre igual, exista o no la cuenta, y en tiempos comparables.
-   Es el mismo criterio que ya usa el login.
+3. **La documentación de la API se genera, no se escribe.** Los esquemas Zod
+   de `packages/contracts` ya son la fuente de verdad de cada payload; de ahí
+   se deriva OpenAPI 3.1 en vez de mantener una especificación aparte que se
+   desincroniza con el código en la primera fase que alguien apure.
 
-4. **Restablecer la contraseña cierra todas las sesiones.** Si alguien llegó
-   ahí porque le robaron la cuenta, dejar sesiones vivas anularía el propósito.
-   A diferencia del cambio de contraseña normal, aquí no se conserva ninguna.
+4. **Swagger UI se sirve desde la propia API**, en una ruta pública sin
+   autenticación, separada de las rutas de negocio bajo `/v1`.
 
-5. **Los tokens de verificación y de recuperación son opacos**, guardados
-   hasheados, de un solo uso. Verificación: 24 horas. Recuperación: 1 hora, más
-   corta porque el riesgo es mayor.
+5. **El versionado de la API y el versionado del paquete son cosas
+   distintas.** El release de `release-please` versiona el repositorio; el
+   prefijo `/v1` de las rutas versiona el contrato HTTP. Pasar a `v2` algún día
+   no depende de qué diga `package.json`.
 
-6. **Una API key no tiene recursos propios.** El concepto de "propiedad" que
-   usan los permisos `:own` no aplica a una credencial de máquina: no es autor
-   ni responsable de nada. Por eso los scopes de escritura de una key usan
-   siempre las variantes `:any`, dentro del alcance de su organización.
-
-7. **La bitácora ya distingue el actor**, así que una tarea creada por una API
-   key queda registrada como tal y no atribuida a la persona que creó la key.
+6. **CI construye la especificación en cada Pull Request** y falla si no
+   compila, para que un contrato roto no llegue a `main` sin que nadie lo note.
 
 ---
 
 ## Alcance
 
-### Modelo de datos
-- [ ] `VerificationToken`: id, userId, tokenHash, expiresAt, usedAt, createdAt
-- [ ] `PasswordResetToken`: id, userId, tokenHash, expiresAt, usedAt, createdAt
-- [ ] Índices en tokenHash y userId
+### release-please
+- [ ] Configuración de `release-please` para el repositorio, en modo
+      manifiesto, con `apps/api` como el paquete cuya versión se expone
+      (aunque el release sea del monorepo completo)
+- [ ] Workflow de GitHub Actions que corre en cada push a `main`: abre o
+      actualiza el Pull Request de release, y al mergearlo crea el tag y el
+      release de GitHub
+- [ ] `CHANGELOG.md` generado, con las entradas de las fases 0 a 4.5
+      reconstruidas a mano una sola vez a partir de los tags existentes, como
+      punto de partida
+- [ ] Verificar que el primer PR de release que abre corresponda a la versión
+      esperada, coherente con `v0.7.0`
 
-### Verificación de correo
-- [ ] Al registrarse se encola el correo de verificación
-- [ ] `POST /v1/auth/verify-email` — consume el token
-- [ ] `POST /v1/auth/resend-verification` — autenticado, con límite de
-      intentos
-- [ ] Aceptar una invitación marca el correo como verificado
-- [ ] `GET /v1/auth/me` expone el estado de verificación
-- [ ] Cambiar el correo, si existiera esa vía, lo devuelve a no verificado
-
-### Recuperación de contraseña
-- [ ] `POST /v1/auth/forgot-password` — respuesta idéntica exista o no la
-      cuenta, con límite de intentos por correo y por IP
-- [ ] `POST /v1/auth/reset-password` — consume el token, cambia la contraseña
-      y revoca todas las sesiones
-- [ ] `GET /v1/auth/reset-password/:token` — verifica si el token sigue siendo
-      válido, sin consumirlo, para que un cliente pueda avisar antes de pedir
-      la contraseña nueva
-
-### Correos
-- [ ] Plantilla de verificación, en texto plano y HTML
-- [ ] Plantilla de recuperación, en texto plano y HTML
-- [ ] Ambas por el worker, contra Mailpit en desarrollo
-
-### API keys de escritura
-- [ ] Ampliar el catálogo de scopes con las variantes de escritura:
-      creación y modificación de tareas, proyectos, comentarios y etiquetas,
-      usando siempre `:any`
-- [ ] Al crear una key se valida que los scopes pedidos existan
-- [ ] Una key solo puede recibir scopes que quien la crea posee: un `ADMIN` no
-      puede fabricar una key con permisos de `OWNER`
-- [ ] La bitácora registra la key como actor en las escrituras que haga
-
-### Tests
-- [ ] Solicitar recuperación con un correo inexistente responde igual que con
-      uno real
-- [ ] Un token de recuperación usado no sirve dos veces
-- [ ] Un token vencido es rechazado
-- [ ] Restablecer la contraseña invalida todas las sesiones previas
-- [ ] El correo de verificación llega a Mailpit con un enlace que funciona
-- [ ] Aceptar una invitación deja el correo verificado
-- [ ] Una key con scope de escritura crea una tarea, y la bitácora la registra
-      como actor
-- [ ] Una key sin ese scope recibe 403
-- [ ] Un `ADMIN` no puede crear una key con scopes que él no tiene
-- [ ] Reenviar la verificación demasiadas veces devuelve 429
+### OpenAPI
+- [ ] Generación de la especificación 3.1 a partir de los esquemas Zod de
+      `packages/contracts`, con metadatos por ruta: resumen, descripción,
+      códigos de respuesta, ejemplos donde ayude
+- [ ] Cobertura de todos los módulos existentes: auth, users, organizations,
+      members, invitations, projects, tasks, comments, labels, activity,
+      webhooks, api-keys, email-verification, password-reset
+- [ ] Los esquemas de error usan la forma RFC 9457 ya establecida
+- [ ] `GET /openapi.json` sirve la especificación
+- [ ] Swagger UI servido en `/docs`, público, sin autenticación
+- [ ] Paso de CI que genera la especificación y falla si no compila o si
+      queda desactualizada respecto a los contratos
 
 ### Documentación
-- [ ] `docs/adr/0011-account-recovery.md` — por qué la respuesta uniforme, por
-      qué se revocan todas las sesiones, y por qué la verificación no bloquea
-      el acceso
-- [ ] README con los endpoints nuevos y el catálogo completo de scopes
-- [ ] `docs/DEBT.md` revisado
+- [ ] `docs/adr/0012-generated-openapi.md` — por qué se genera desde Zod en
+      vez de mantenerse a mano
+- [ ] README con un enlace a `/docs` y una nota de que el CHANGELOG se genera
+      solo desde ahora
+- [ ] `CONTRIBUTING.md` breve explicando Conventional Commits para quien
+      revise el repositorio, ya que ahora determinan la versión automáticamente
+
+### Tests
+- [ ] La especificación generada es JSON válido y cumple el esquema de
+      OpenAPI 3.1
+- [ ] Cada ruta registrada en el enrutador de Express tiene su contraparte en
+      la especificación generada, para detectar un endpoint olvidado
+- [ ] `/docs` responde 200 sin autenticación
+- [ ] `/openapi.json` no expone rutas internas de salud ni nada fuera de `/v1`
 
 ---
 
 ## Fuera de alcance
 
-- Segundo factor de autenticación
-- Inicio de sesión con proveedores externos
-- Cambio de dirección de correo del usuario
-- Rotación de API keys
-- Límites de uso por API key
-- Cualquier bloqueo de funcionalidad por correo sin verificar
+- Publicar el paquete `contracts` en un registro de npm público o privado
+- Versionado de API con múltiples versiones activas simultáneamente (`/v1` y
+  `/v2` coexistiendo)
+- SDKs generados a partir de la especificación
+- Cualquier cambio de infraestructura o despliegue: eso es la Fase 6
+- Reescribir o corregir el historial de commits de fases anteriores para que
+  `release-please` los reprocese
 
 ---
 
@@ -124,12 +105,14 @@ tienen excusa para seguir pendientes.
 1. Sin archivo `.env`, con el stack levantado:
    `pnpm install && pnpm test && pnpm typecheck && pnpm lint` pasa entero
 2. `docker compose up -d --build` deja los cinco servicios `healthy`
-3. Los dos checks del CI en verde en el Pull Request
-4. Recorrido manual: registrarse y ver el correo de verificación en Mailpit,
-   verificar, pedir recuperación con un correo inexistente y comprobar que la
-   respuesta es idéntica, recuperar con uno real y confirmar que la sesión
-   anterior dejó de servir, y crear una API key de escritura que cree una tarea
-   registrada a su nombre en la bitácora
+3. Los dos checks del CI en verde en el Pull Request, más el nuevo paso que
+   valida la especificación OpenAPI
+4. `curl localhost:3000/docs` responde 200 y muestra Swagger UI con todos los
+   módulos listados
+5. Al mergear esta fase a `main`, `release-please` abre su primer Pull Request
+   de release con un changelog coherente
 
-Cumplido eso: Pull Request, checks verdes, merge con commit de merge, y tag
-`v0.7.0`.
+Cumplido eso: Pull Request, checks verdes, merge con commit de merge. Esta vez
+**no se crea el tag a mano** — se deja que el flujo de `release-please` abra su
+Pull Request de release por separado, y ese es el que se mergea para producir
+`v0.8.0`.

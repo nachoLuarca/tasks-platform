@@ -69,9 +69,31 @@ migraciones:
 pnpm db:migrate
 ```
 
+## Documentacion de la API
+
+Con la API levantada, la referencia completa esta en
+**[http://localhost:3000/docs](http://localhost:3000/docs)** (Swagger UI).
+Incluye todos los endpoints, sus cuerpos y respuestas, los permisos que exige
+cada uno y los errores posibles. El documento OpenAPI 3.1 que la alimenta esta
+en [http://localhost:3000/openapi.json](http://localhost:3000/openapi.json).
+Las dos rutas son publicas.
+
+Esa especificacion no se escribe a mano: la API la genera al arrancar desde los
+mismos esquemas Zod de `packages/contracts` que validan cada peticion, mas un
+archivo `<dominio>.openapi.ts` por modulo con el resumen y los codigos de
+respuesta de cada ruta. CI la valida contra el esquema de OpenAPI 3.1 y un test
+falla si alguna ruta de Express queda sin documentar. El por que esta en
+[`docs/adr/0012-generated-openapi.md`](./docs/adr/0012-generated-openapi.md).
+
+```bash
+curl http://localhost:3000/openapi.json
+pnpm --filter @tasks-platform/api run openapi:check   # genera y valida, sin .env ni servicios
+```
+
 ## Endpoints disponibles
 
-Todas las rutas de la API llevan el prefijo `/v1`.
+Todas las rutas de la API llevan el prefijo `/v1`. La tabla es un resumen; el
+detalle de cada ruta esta en [`/docs`](http://localhost:3000/docs).
 
 | Metodo y ruta                | Requiere auth | Que hace                                                    |
 | ---------------------------- | :-----------: | ----------------------------------------------------------- |
@@ -669,6 +691,20 @@ Scripts disponibles en la raiz del monorepo:
 | `pnpm db:migrate` | Aplica las migraciones de Prisma en desarrollo               |
 | `pnpm db:reset`   | Resetea la base de datos de desarrollo                       |
 
+## Versionado y CHANGELOG
+
+[`CHANGELOG.md`](./CHANGELOG.md) **se genera solo** desde la Fase 5: no se
+edita a mano. [release-please](https://github.com/googleapis/release-please)
+lee los Conventional Commits que llegan a `main` y mantiene abierto un Pull
+Request de release con la proxima version y su changelog. Al mergear ese Pull
+Request se crean el tag `vX.Y.Z` y el release de GitHub. Los tags ya no se
+ponen a mano; `v0.1.0` a `v0.7.0` quedan como estaban. Las entradas de esas
+versiones en el changelog se reconstruyeron una unica vez.
+
+Como el tipo de cada commit decide la version (`feat` -> minor, `fix` -> patch,
+`BREAKING CHANGE` -> major), las reglas estan en
+[`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
 ## Estructura de carpetas
 
 ```
@@ -682,9 +718,13 @@ tasks-platform/
   docker/                 Dockerfile(s) de los servicios
   docs/
     adr/                  Registros de decisiones de arquitectura
+  .github/workflows/       CI (lint, typecheck, OpenAPI, tests, imagen) y release-please
   docker-compose.yml
   ARCHITECTURE.md          Contrato de arquitectura y convenciones
   PHASE.md                 Alcance de la fase actual
+  CHANGELOG.md             Generado por release-please
+  CONTRIBUTING.md          Conventional Commits y como sale un release
+  release-please-config.json, .release-please-manifest.json
 ```
 
 Estructura interna de `apps/api/src`:
@@ -714,6 +754,7 @@ src/
       <dominio>.service.ts      Reglas de negocio
       <dominio>.repository.ts   Acceso a datos (unico lugar que toca Prisma)
       <dominio>.mapper.ts       Entidad -> DTO de respuesta
+      <dominio>.openapi.ts      Metadatos OpenAPI de sus rutas (esquemas importados de contracts)
   shared/
     authorization/          Matriz de permisos, actor (miembro o API key),
                              catalogo de scopes, requireMembership, requirePermission
@@ -723,8 +764,10 @@ src/
     http/                   Middlewares transversales (request id, logging,
                              limite de intentos, validacion de body)
     logger/                 Logger y contexto de peticion
+    openapi/                Helpers para declarar rutas en OpenAPI, y /docs
     security/               Hashing de contraseñas (Argon2id) y tokens (JWT
                              + refresh token opaco)
+  openapi-document.ts       Arma la especificacion OpenAPI 3.1 desde los modulos
   app.ts                    Construccion de la aplicacion Express
   server.ts                 Arranque del proceso y apagado ordenado
 ```
