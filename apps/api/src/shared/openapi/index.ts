@@ -9,3 +9,4 @@ export {
   type OperationSpec,
   type ProblemStatus,
 } from './openapi.helpers.js';
+export { DOCS_PATH, OPENAPI_JSON_PATH, createDocsRouter } from './docs.router.js';

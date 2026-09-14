@@ -10,9 +10,11 @@ import { invitationsRouter } from './modules/invitations/invitations.routes.js';
 import { organizationsRouter } from './modules/organizations/organizations.routes.js';
 import { passwordResetRouter } from './modules/password-reset/password-reset.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
+import { buildOpenApiDocument } from './openapi-document.js';
 import { config } from './shared/config/index.js';
 import { errorHandler, notFoundHandler } from './shared/errors/index.js';
 import { requestIdMiddleware, requestLoggerMiddleware } from './shared/http/index.js';
+import { createDocsRouter } from './shared/openapi/index.js';
 
 function resolveCorsOrigin(): boolean | string[] {
   if (config.cors.origin === '*') {
@@ -34,6 +36,8 @@ export function buildApp(): Express {
   app.use(express.json({ limit: config.bodyLimit }));
 
   app.use('/health', healthRouter);
+  // GET /openapi.json and /docs: public, outside /v1, never behind requireAuth.
+  app.use(createDocsRouter(buildOpenApiDocument()));
   app.use('/v1/auth', authRouter);
   app.use('/v1/auth', emailVerificationRouter);
   app.use('/v1/auth', passwordResetRouter);
