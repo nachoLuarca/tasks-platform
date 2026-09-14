@@ -72,6 +72,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Builds the OpenAPI document from the contracts exactly as the API does
+      # at startup, and fails if it can't be built or isn't valid OpenAPI 3.1.
+      # Needs no env or services. Route coverage is checked in the Test step.
+      - name: Validate OpenAPI document
+        run: pnpm --filter @tasks-platform/api run openapi:check
+
       - name: Test
         run: pnpm test
 
