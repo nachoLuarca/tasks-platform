@@ -6,6 +6,14 @@ mano. Las entradas de `v0.1.0` a `v0.7.0` se reconstruyeron una sola vez, a part
 cada fase y de los commits `feat` y `fix` que cada uno incluye, con el mismo formato que usa
 release-please.
 
+## [0.8.0](https://github.com/nachoLuarca/tasks-platform/compare/v0.7.0...v0.8.0) (2026-09-14)
+
+
+### Features
+
+* generate the OpenAPI 3.1 document from the Zod contracts ([9177d23](https://github.com/nachoLuarca/tasks-platform/commit/9177d23a8e21c7f18b271d4603cd4b7c3cd696c2))
+* serve the OpenAPI document and Swagger UI ([1ce5e69](https://github.com/nachoLuarca/tasks-platform/commit/1ce5e6955fab9619c5de5f00a8c1a68ac56b9eaa))
+
 ## [0.7.0](https://github.com/nachoLuarca/tasks-platform/compare/v0.6.0...v0.7.0) (2026-09-11)
 
 Fase 4.5: cuenta y credenciales ([#11](https://github.com/nachoLuarca/tasks-platform/pull/11)).
