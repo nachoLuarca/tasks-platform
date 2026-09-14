@@ -2,38 +2,8 @@ import type { ErrorRequestHandler, RequestHandler } from 'express';
 
 import { redactTokenPaths } from '../http/redact-token-paths.js';
 import { getRequestId, logger } from '../logger/index.js';
-import { AppError, NotFoundError, TooManyRequestsError, ValidationError } from './app-error.js';
-
-interface ProblemDetails {
-  type: string;
-  title: string;
-  status: number;
-  detail?: string;
-  instance?: string;
-  errors?: unknown;
-}
-
-function toProblemDetails(error: unknown): ProblemDetails {
-  const instance = getRequestId();
-
-  if (error instanceof AppError) {
-    return {
-      type: error.type,
-      title: error.title,
-      status: error.status,
-      detail: error.detail,
-      instance,
-      errors: error instanceof ValidationError ? error.errors : undefined,
-    };
-  }
-
-  return {
-    type: 'https://tasks-platform.dev/errors/internal',
-    title: 'Internal Server Error',
-    status: 500,
-    instance,
-  };
-}
+import { NotFoundError, TooManyRequestsError } from './app-error.js';
+import { toProblemDetails } from './problem-details.js';
 
 /** The path ends up in both the response and the warn log below, so token segments are masked first. */
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
@@ -41,7 +11,7 @@ export const notFoundHandler: RequestHandler = (req, _res, next) => {
 };
 
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
-  const problem = toProblemDetails(error);
+  const problem = toProblemDetails(error, getRequestId());
 
   if (problem.status >= 500) {
     logger.error({ err: error }, 'Unhandled error');

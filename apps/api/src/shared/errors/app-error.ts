@@ -1,3 +1,5 @@
+import type { ValidationErrors } from '@tasks-platform/contracts';
+
 /**
  * Base class for every expected application error. Carries enough
  * information to be rendered as an RFC 9457 Problem Details response.
@@ -31,9 +33,9 @@ export class NotFoundError extends AppError {
 }
 
 export class ValidationError extends AppError {
-  public readonly errors?: unknown;
+  public readonly errors?: ValidationErrors;
 
-  constructor(detail?: string, errors?: unknown) {
+  constructor(detail?: string, errors?: ValidationErrors) {
     super({
       status: 400,
       type: 'https://tasks-platform.dev/errors/validation',
