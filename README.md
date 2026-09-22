@@ -705,6 +705,65 @@ Como el tipo de cada commit decide la version (`feat` -> minor, `fix` -> patch,
 `BREAKING CHANGE` -> major), las reglas estan en
 [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
+## Despliegue
+
+El proyecto se despliega en [Render](https://render.com/) desde el Blueprint
+[`render.yaml`](./render.yaml) de la raiz: dos servicios web (`api` y
+`worker`), construidos con los mismos Dockerfiles de `docker/`. El estado vive
+fuera de Render — PostgreSQL en [Neon](https://neon.tech/) y Redis en
+[Upstash](https://upstash.com/) — y cada push a `main` dispara un despliegue
+automatico. El por que de cada una de esas decisiones, y que se sacrifico con
+ellas, esta en [`docs/adr/0013-render-deployment.md`](./docs/adr/0013-render-deployment.md).
+
+### URLs del despliegue
+
+<!-- Completar tras el primer despliegue con las URLs que asigne Render. -->
+
+| Servicio | URL base      | Rutas utiles                                          |
+| -------- | ------------- | ----------------------------------------------------- |
+| API      | _(pendiente)_ | `/docs`, `/openapi.json`, `/health/live`, `/health/ready` |
+| Worker   | _(pendiente)_ | `/health/live`, `/health/ready`                       |
+
+> **El primer request puede tardar hasta un minuto.** Los servicios del plan
+> gratuito de Render se suspenden tras 15 minutos sin trafico HTTP, y la
+> peticion que los despierta espera a que el contenedor arranque de cero. No
+> es un error ni un cuelgue: si `curl` parece no responder, hay que darle ese
+> minuto. Del segundo request en adelante la latencia es la normal. Ver
+> [`docs/DEBT.md`](./docs/DEBT.md) para la mitigacion (un monitor externo que
+> pinguea ambos servicios) y sus limites.
+
+### Migraciones en produccion
+
+No hay paso manual. El entrypoint de la imagen de produccion de la API
+([`docker/api-entrypoint.sh`](./docker/api-entrypoint.sh)) corre
+`prisma migrate deploy` antes de levantar Express, en cada arranque del
+contenedor. Si la migracion falla, el contenedor no arranca: Render mantiene
+la version anterior sirviendo trafico y marca el despliegue como fallido, en
+vez de dejar la API respondiendo contra un schema desactualizado.
+
+### Variables que se cargan a mano en el panel
+
+`render.yaml` declara todas las variables de entorno de ambos servicios, pero
+ningun valor secreto: los que Render sabe generar usan `generateValue: true`
+(hoy solo `JWT_SECRET`) y el resto usa `sync: false`, que significa "esta
+variable existe, su valor se carga en el panel". Al importar el Blueprint,
+Render las pide una por una antes del primer despliegue:
+
+| Variable                                  | De donde sale                                                  |
+| ----------------------------------------- | -------------------------------------------------------------- |
+| `DATABASE_URL`                            | Neon, "Connection string" (variante pooled, con `sslmode=require`) |
+| `REDIS_URL`                               | Upstash, seccion "Connect" (esquema `rediss://`, TLS obligatorio) |
+| `APP_PUBLIC_URL`                          | La URL que Render asigna al servicio `api`                     |
+| `WEB_APP_URL`                             | El front de la Fase 7; hasta entonces, la misma de la API      |
+| `CORS_ORIGIN`                             | El dominio del front; hasta la Fase 7, el mismo de la API      |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | El proveedor SMTP elegido (Resend, Brevo, Mailgun, ...)        |
+| `SMTP_USER` / `SMTP_PASSWORD`             | Las credenciales SMTP de ese proveedor                         |
+| `SMTP_FROM`                               | Un remitente de un dominio verificado en ese proveedor         |
+
+Mailpit no existe en produccion: es solo para desarrollo local. El detalle de
+que variable pertenece a que entorno esta comentado en
+[`.env.example`](./.env.example).
+
 ## Estructura de carpetas
 
 ```
@@ -715,11 +774,12 @@ tasks-platform/
   packages/
     contracts/            Esquemas Zod y tipos compartidos entre API y frontend
     shared/               Config, DB, logger, firma de webhooks, colas y tokens de cuenta compartidos por api y worker
-  docker/                 Dockerfile(s) de los servicios
+  docker/                 Dockerfile(s) y entrypoints de produccion de los servicios
   docs/
     adr/                  Registros de decisiones de arquitectura
   .github/workflows/       CI (lint, typecheck, OpenAPI, tests, imagen) y release-please
-  docker-compose.yml
+  docker-compose.yml       Entorno de desarrollo local
+  render.yaml              Blueprint de despliegue en Render (dos servicios web)
   ARCHITECTURE.md          Contrato de arquitectura y convenciones
   PHASE.md                 Alcance de la fase actual
   CHANGELOG.md             Generado por release-please

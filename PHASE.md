@@ -70,40 +70,40 @@ Esta rama prepara únicamente lo que vive en el repositorio.
 ## Alcance
 
 ### Blueprint
-- [ ] `render.yaml` en la raíz, con dos servicios: `api` y `worker`, cada
+- [x] `render.yaml` en la raíz, con dos servicios: `api` y `worker`, cada
       uno con su `dockerfilePath`, `dockerContext` y el stage `runtime`
-- [ ] Variables de entorno declaradas para ambos: las que Render genera
+- [x] Variables de entorno declaradas para ambos: las que Render genera
       solas (`JWT_SECRET` con `generateValue: true`) y las que el usuario
       debe completar a mano tras el primer despliegue
-- [ ] `healthCheckPath` configurado para cada servicio, apuntando a su
+- [x] `healthCheckPath` configurado para cada servicio, apuntando a su
       endpoint real
-- [ ] Plan `free` explícito en ambos servicios
+- [x] Plan `free` explícito en ambos servicios
 
 ### Dockerfiles
-- [ ] Confirmar que el stage `runtime` de `docker/api.Dockerfile` y
+- [x] Confirmar que el stage `runtime` de `docker/api.Dockerfile` y
       `docker/worker.Dockerfile` produce una imagen que arranca sin
       necesidad de `pnpm install` ni `prisma generate` en el arranque
-- [ ] El stage `runtime` corre `prisma migrate deploy` como parte del
+- [x] El stage `runtime` corre `prisma migrate deploy` como parte del
       arranque del contenedor, antes de levantar el servidor, para que la
       base de datos de producción quede al día con cada despliegue
 
 ### Configuración de producción
-- [ ] `.env.example` documenta, con un comentario claro, cuáles variables
+- [x] `.env.example` documenta, con un comentario claro, cuáles variables
       son para desarrollo local y cuáles se completan solo en el panel de
       Render
-- [ ] CORS configurado para aceptar el dominio del front de demostración de
+- [x] CORS configurado para aceptar el dominio del front de demostración de
       la Fase 7, una vez que exista; por ahora, documentado como pendiente
-- [ ] Confirmar que el logger no imprime nada de nivel `debug` en producción
+- [x] Confirmar que el logger no imprime nada de nivel `debug` en producción
 
 ### Documentación
-- [ ] `docs/adr/0013-render-deployment.md` — por qué Render con Neon y
+- [x] `docs/adr/0013-render-deployment.md` — por qué Render con Neon y
       Upstash en vez de un servidor propio, qué se ganó y qué se sacrificó
       (cold starts, sin control del sistema operativo, dependiente de tres
       proveedores gratuitos distintos)
-- [ ] README con las URLs del despliegue una vez que existan, y un aviso
+- [x] README con el lugar para las URLs del despliegue una vez que existan, y un aviso
       explícito de que el servicio puede tardar hasta un minuto en responder
       tras un período de inactividad
-- [ ] `docs/DEBT.md` actualizado con la limitación del sueño por inactividad
+- [x] `docs/DEBT.md` actualizado con la limitación del sueño por inactividad
       y la ausencia de backups gestionados en la capa gratuita de Neon
 
 ---

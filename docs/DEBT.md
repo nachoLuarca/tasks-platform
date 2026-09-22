@@ -274,3 +274,71 @@ absorbiendo una migracion mayor de una sola vez.
 en el mismo commit, corriendo la suite de tests completa despues.
 
 **Prioridad:** baja, no bloquea nada hoy.
+
+## Los servicios de Render duermen tras 15 minutos sin trafico
+
+**Donde:** `render.yaml`, ambos servicios (`plan: free`).
+
+**Que pasa:** un Web Service del plan gratuito de Render se suspende tras 15
+minutos sin recibir peticiones HTTP. La siguiente peticion lo despierta, pero
+tiene que esperar a que el contenedor arranque de cero: levantar la imagen,
+correr `prisma migrate deploy` y conectar Postgres y Redis. En la practica,
+hasta un minuto de espera para ese primer request.
+
+En el worker el efecto es peor que lento. Su trabajo real (consumir la cola de
+BullMQ, despachar el outbox) no genera trafico HTTP, asi que Render lo
+considera inactivo aunque este procesando: dormido, deja de consumir la cola,
+y los eventos se acumulan hasta que algo lo despierte.
+
+**Por que se hizo asi:** es la condicion de la capa gratuita, no una eleccion.
+Ver `docs/adr/0013-render-deployment.md`; el tipo de servicio correcto para el
+worker (Background Worker, que no duerme) es de pago desde el primer minuto.
+
+**Mitigacion actual:** un monitor externo gratuito (UptimeRobot) pinguea cada
+5 a 10 minutos `/health/live` de la API y `/health/live` del worker. Mientras
+el monitor corra, ninguno de los dos llega a los 15 minutos de inactividad.
+Es una mitigacion, no una solucion: depende de un cuarto servicio gratuito, y
+consume horas de instancia de Render las 24 horas (la capa gratuita tiene un
+tope mensual de horas de computo).
+
+**Costo:** el primer request tras una inactividad real es lento; los eventos
+del outbox pueden quedar sin despachar mientras el worker duerma; y el pinger
+mantiene ambos servicios corriendo todo el tiempo, gastando el presupuesto
+mensual de horas gratuitas.
+
+**Como resolverlo cuando se retome:** pasar el worker a un Background Worker
+de pago (elimina el problema de raiz, es el tipo de servicio correcto), o
+migrar el computo a una VM siempre encendida — `PHASE.md` deja anotado el
+Free Tier de Oracle Cloud como candidato si alguna vez hay capacidad.
+
+**Prioridad:** media para el worker (afecta el procesamiento real, no solo la
+latencia); baja para la API mientras el proyecto no tenga trafico genuino.
+
+## La base de datos de produccion no tiene backups automatizados
+
+**Donde:** la capa gratuita de Neon, donde vive el Postgres de produccion.
+
+**Que pasa:** el plan gratuito de Neon no incluye backups gestionados ni
+programados. Su ventana de restauracion en el tiempo es corta y limitada, y
+no hay copias propias del proyecto en ningun lado: nadie corre un `pg_dump`,
+ni existe un lugar donde guardarlo. Un borrado accidental o una migracion
+destructiva no tienen vuelta atras mas alla de lo que Neon conserve por su
+cuenta.
+
+**Por que se hizo asi:** `PHASE.md` deja explicitamente fuera de alcance los
+backups mas alla de lo que ofrezca la capa gratuita. Automatizar un `pg_dump`
+periodico necesita un lugar donde correrlo (Render gratuito no tiene Cron
+Jobs) y un lugar donde guardar el resultado, y ninguno de los dos existe hoy.
+
+**Costo:** perdida total o parcial de datos ante un error humano o una
+migracion mal hecha. El impacto real es bajo hoy — no hay datos de usuarios
+reales — y seria alto en el momento en que los hubiera.
+
+**Como resolverlo cuando se retome:** antes de que existan datos que importen,
+un `pg_dump` programado hacia almacenamiento externo (por ejemplo un bucket
+compatible con S3 en una capa gratuita), disparado por un Cron Job pago de
+Render o por un workflow programado de GitHub Actions, que si es gratuito para
+un repositorio publico.
+
+**Prioridad:** baja mientras la base no tenga datos reales; alta desde el
+momento en que los tenga.
