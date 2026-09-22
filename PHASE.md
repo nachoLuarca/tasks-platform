@@ -1,118 +1,155 @@
-# Fase actual: 5 — Release automático y OpenAPI
+# Fase actual: 6 — Despliegue
 
-**Objetivo:** que versionar y documentar la API dejen de ser pasos manuales.
-Changelog generado desde los commits, tags automáticos, y una especificación
-OpenAPI publicada desde los mismos esquemas Zod que ya validan cada petición.
+**Objetivo:** el proyecto corriendo en internet, gratis, con despliegue
+automático desde `main`. Blueprint declarativo, base de datos y cola
+gestionadas fuera de Render, y monitoreo básico que evita que el servicio
+duerma cuando alguien lo está probando.
 
-**Rama:** `feat/release-automation-and-openapi`
-**Tag al cerrar:** `v0.8.0`
+**Rama:** `feat/deployment`
+**Tag:** ninguno creado a mano. El versionado sigue siendo responsabilidad
+exclusiva de `release-please`; esta fase no introduce un tag `v1.0.0`
+artificial. El README documenta en qué versión quedó el primer despliegue
+público.
 
-Última fase antes del despliegue. Corta comparada con las últimas cuatro.
+Fase corta. Gran parte del trabajo es configuración en paneles externos que
+Claude Code no puede tocar — eso lo hace el usuario a mano, guiado aparte.
+Esta rama prepara únicamente lo que vive en el repositorio.
 
 ---
 
 ## Decisiones ya tomadas
 
-1. **`release-please` gestiona la versión.** Lee los Conventional Commits desde
-   el último release, decide si el próximo es patch, minor o major, mantiene
-   un Pull Request de release siempre abierto con el changelog propuesto, y al
-   mergear ese PR crea el tag y publica el release en GitHub. Los tags dejan
-   de ponerse a mano.
+1. **Render aloja el cómputo; Neon y Upstash alojan el estado.** Postgres
+   gratuito de Render expira a los 30 días; Neon no. Redis gratuito de Render
+   es de 25 MB; Upstash da más margen sin costo. Ningún dato vive en un
+   servicio que pueda desaparecer sin aviso.
 
-2. **De aquí en adelante, un solo tipo de tag.** Hasta ahora se etiquetó cada
-   fase manualmente (`v0.1.0` a `v0.7.0`). Desde esta fase, todos los tags
-   futuros los crea `release-please`. Los tags existentes no se tocan ni se
-   reescriben: quedan como el historial real del proyecto.
+2. **El worker se despliega como Web Service, no como Background Worker.**
+   Los Background Workers de Render no tienen capa gratuita. El worker ya
+   expone `apps/worker/src/health-server.ts` en un puerto HTTP: eso basta
+   para que Render lo trate como un servicio web válido. Por dentro sigue
+   siendo BullMQ consumiendo Redis; Render nunca lo sabe ni le importa.
 
-3. **La documentación de la API se genera, no se escribe.** Los esquemas Zod
-   de `packages/contracts` ya son la fuente de verdad de cada payload; de ahí
-   se deriva OpenAPI 3.1 en vez de mantener una especificación aparte que se
-   desincroniza con el código en la primera fase que alguien apure.
+3. **Un único entorno de producción, no staging más producción.** El plan
+   original de dos entornos asumía un servidor propio donde levantar dos
+   máquinas era gratis. En Render, cada Web Service adicional es otro
+   servicio con su propio límite de sueño; duplicar entornos no aporta nada
+   en un proyecto de portafolio sin tráfico real. `main` protegida con CI
+   obligatorio ya cumple el papel de red de seguridad antes de desplegar.
 
-4. **Swagger UI se sirve desde la propia API**, en una ruta pública sin
-   autenticación, separada de las rutas de negocio bajo `/v1`.
+4. **Despliegue automático en cada push a `main`.** Sin paso manual, sin
+   aprobación adicional: los checks obligatorios de `main` ya son el punto
+   de control.
 
-5. **El versionado de la API y el versionado del paquete son cosas
-   distintas.** El release de `release-please` versiona el repositorio; el
-   prefijo `/v1` de las rutas versiona el contrato HTTP. Pasar a `v2` algún día
-   no depende de qué diga `package.json`.
+5. **Blueprint declarativo (`render.yaml`) en la raíz del repo.** Los dos
+   servicios, sus rutas de Dockerfile y sus variables de entorno quedan
+   versionados en git, no armados a mano en el panel de Render.
 
-6. **CI construye la especificación en cada Pull Request** y falla si no
-   compila, para que un contrato roto no llegue a `main` sin que nadie lo note.
+6. **Ambos Dockerfiles apuntan al stage `runtime`, no a `dev`.** El stage de
+   desarrollo reconstruye `contracts` y corre `prisma generate` al arrancar,
+   pensado para el hot reload local. En producción eso es tiempo de arranque
+   desperdiciado en cada despliegue; el stage `runtime` ya compilado existe
+   desde la Fase 0 y hasta ahora no se usaba en ningún lado.
+
+7. **Los secretos se configuran en el panel de Render, nunca en el
+   repositorio.** `render.yaml` declara qué variables existen y cuáles se
+   generan solas (como `JWT_SECRET`); los valores de Neon, Upstash y SMTP se
+   pegan a mano una sola vez.
+
+8. **El correo de producción usa un proveedor SMTP real**, no Mailpit.
+   Mailpit sigue existiendo solo en `docker-compose.yml` para desarrollo
+   local; en Render, `apps/worker` apunta a las credenciales SMTP reales
+   provistas por variables de entorno.
+
+9. **`GET /health/live` es el endpoint que usa Render para decidir si el
+   servicio sigue vivo**, y el mismo que usa el pinger externo para evitar
+   que duerma. El worker expone el suyo propio en `/health`.
 
 ---
 
 ## Alcance
 
-### release-please
-- [ ] Configuración de `release-please` para el repositorio, en modo
-      manifiesto, con `apps/api` como el paquete cuya versión se expone
-      (aunque el release sea del monorepo completo)
-- [ ] Workflow de GitHub Actions que corre en cada push a `main`: abre o
-      actualiza el Pull Request de release, y al mergearlo crea el tag y el
-      release de GitHub
-- [ ] `CHANGELOG.md` generado, con las entradas de las fases 0 a 4.5
-      reconstruidas a mano una sola vez a partir de los tags existentes, como
-      punto de partida
-- [ ] Verificar que el primer PR de release que abre corresponda a la versión
-      esperada, coherente con `v0.7.0`
+### Blueprint
+- [ ] `render.yaml` en la raíz, con dos servicios: `api` y `worker`, cada
+      uno con su `dockerfilePath`, `dockerContext` y el stage `runtime`
+- [ ] Variables de entorno declaradas para ambos: las que Render genera
+      solas (`JWT_SECRET` con `generateValue: true`) y las que el usuario
+      debe completar a mano tras el primer despliegue
+- [ ] `healthCheckPath` configurado para cada servicio, apuntando a su
+      endpoint real
+- [ ] Plan `free` explícito en ambos servicios
 
-### OpenAPI
-- [ ] Generación de la especificación 3.1 a partir de los esquemas Zod de
-      `packages/contracts`, con metadatos por ruta: resumen, descripción,
-      códigos de respuesta, ejemplos donde ayude
-- [ ] Cobertura de todos los módulos existentes: auth, users, organizations,
-      members, invitations, projects, tasks, comments, labels, activity,
-      webhooks, api-keys, email-verification, password-reset
-- [ ] Los esquemas de error usan la forma RFC 9457 ya establecida
-- [ ] `GET /openapi.json` sirve la especificación
-- [ ] Swagger UI servido en `/docs`, público, sin autenticación
-- [ ] Paso de CI que genera la especificación y falla si no compila o si
-      queda desactualizada respecto a los contratos
+### Dockerfiles
+- [ ] Confirmar que el stage `runtime` de `docker/api.Dockerfile` y
+      `docker/worker.Dockerfile` produce una imagen que arranca sin
+      necesidad de `pnpm install` ni `prisma generate` en el arranque
+- [ ] El stage `runtime` corre `prisma migrate deploy` como parte del
+      arranque del contenedor, antes de levantar el servidor, para que la
+      base de datos de producción quede al día con cada despliegue
+
+### Configuración de producción
+- [ ] `.env.example` documenta, con un comentario claro, cuáles variables
+      son para desarrollo local y cuáles se completan solo en el panel de
+      Render
+- [ ] CORS configurado para aceptar el dominio del front de demostración de
+      la Fase 7, una vez que exista; por ahora, documentado como pendiente
+- [ ] Confirmar que el logger no imprime nada de nivel `debug` en producción
 
 ### Documentación
-- [ ] `docs/adr/0012-generated-openapi.md` — por qué se genera desde Zod en
-      vez de mantenerse a mano
-- [ ] README con un enlace a `/docs` y una nota de que el CHANGELOG se genera
-      solo desde ahora
-- [ ] `CONTRIBUTING.md` breve explicando Conventional Commits para quien
-      revise el repositorio, ya que ahora determinan la versión automáticamente
-
-### Tests
-- [ ] La especificación generada es JSON válido y cumple el esquema de
-      OpenAPI 3.1
-- [ ] Cada ruta registrada en el enrutador de Express tiene su contraparte en
-      la especificación generada, para detectar un endpoint olvidado
-- [ ] `/docs` responde 200 sin autenticación
-- [ ] `/openapi.json` no expone rutas internas de salud ni nada fuera de `/v1`
+- [ ] `docs/adr/0013-render-deployment.md` — por qué Render con Neon y
+      Upstash en vez de un servidor propio, qué se ganó y qué se sacrificó
+      (cold starts, sin control del sistema operativo, dependiente de tres
+      proveedores gratuitos distintos)
+- [ ] README con las URLs del despliegue una vez que existan, y un aviso
+      explícito de que el servicio puede tardar hasta un minuto en responder
+      tras un período de inactividad
+- [ ] `docs/DEBT.md` actualizado con la limitación del sueño por inactividad
+      y la ausencia de backups gestionados en la capa gratuita de Neon
 
 ---
 
 ## Fuera de alcance
 
-- Publicar el paquete `contracts` en un registro de npm público o privado
-- Versionado de API con múltiples versiones activas simultáneamente (`/v1` y
-  `/v2` coexistiendo)
-- SDKs generados a partir de la especificación
-- Cualquier cambio de infraestructura o despliegue: eso es la Fase 6
-- Reescribir o corregir el historial de commits de fases anteriores para que
-  `release-please` los reprocese
+- Dominio propio: se usa el subdominio que asigna Render por defecto
+- Entorno de staging separado
+- CDN o cualquier optimización de borde
+- Migración de Oracle si en algún momento consigue capacidad: quedaría para
+  una fase aparte, no forzada aquí
+- Backups automatizados de la base de datos más allá de lo que Neon ofrezca
+  gratis
+- Cualquier cambio de funcionalidad del backend: esta fase es solo despliegue
+
+---
+
+## Lo que hace el usuario fuera del código
+
+Esto no lo prepara el agente, porque requiere cuentas y paneles externos.
+Se hace después de que esta rama esté mergeada:
+
+1. Crear un proyecto en Neon y obtener la cadena de conexión de Postgres
+2. Crear una base en Upstash y obtener la URL de Redis
+3. Crear una cuenta en Render, conectar el repositorio de GitHub
+4. Desplegar desde el Blueprint (`render.yaml`) que esta fase deja listo
+5. Completar en el panel de Render las variables que no se generan solas:
+   la cadena de Neon, la URL de Upstash, y las credenciales SMTP
+6. Configurar un monitor gratuito en UptimeRobot contra `/health/live` de la
+   API y `/health` del worker, cada 5 a 10 minutos
 
 ---
 
 ## Criterio de cierre
 
-1. Sin archivo `.env`, con el stack levantado:
-   `pnpm install && pnpm test && pnpm typecheck && pnpm lint` pasa entero
-2. `docker compose up -d --build` deja los cinco servicios `healthy`
-3. Los dos checks del CI en verde en el Pull Request, más el nuevo paso que
-   valida la especificación OpenAPI
-4. `curl localhost:3000/docs` responde 200 y muestra Swagger UI con todos los
-   módulos listados
-5. Al mergear esta fase a `main`, `release-please` abre su primer Pull Request
-   de release con un changelog coherente
+1. Sin archivo `.env`: `pnpm install && pnpm test && pnpm typecheck && pnpm
+   lint` pasa entero
+2. `docker compose build api` y `docker compose build worker` siguen
+   funcionando igual que antes para desarrollo local; esta fase no rompe el
+   flujo existente
+3. Los tres checks del CI en verde en el Pull Request
+4. `render.yaml` es válido y describe correctamente los dos servicios, según
+   la validación que ofrezca el propio panel de Render al importarlo
+5. Una vez desplegado por el usuario: `curl` a la URL pública de la API
+   responde 200 en `/health/live`, y `/docs` muestra Swagger UI
 
-Cumplido eso: Pull Request, checks verdes, merge con commit de merge. Esta vez
-**no se crea el tag a mano** — se deja que el flujo de `release-please` abra su
-Pull Request de release por separado, y ese es el que se mergea para producir
-`v0.8.0`.
+Cumplido lo del repositorio: Pull Request, checks verdes, merge con commit de
+merge. El resto del criterio se verifica después, en el panel de Render, con
+el usuario guiado paso a paso fuera del código.
