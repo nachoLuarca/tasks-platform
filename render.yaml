@@ -1,0 +1,133 @@
+# Blueprint de Render (https://render.com/docs/blueprint-spec).
+#
+# Describe la infraestructura de computo del proyecto: dos servicios web,
+# ambos construidos desde este mismo repositorio con Docker. El estado vive
+# fuera de Render a proposito -- Postgres en Neon, Redis en Upstash -- y
+# llega por variables de entorno (ver docs/adr/0013-render-deployment.md).
+#
+# Ningun valor secreto esta en este archivo ni puede estarlo: los que Render
+# sabe generar usan `generateValue: true`, y los que dependen de un tercero
+# usan `sync: false`, que le dice a Render "esta variable existe, pero su
+# valor se carga a mano en el panel". Al importar el Blueprint, Render pide
+# esos valores uno por uno antes del primer despliegue.
+#
+# Nota sobre el stage de Docker: la especificacion de Render no tiene un
+# campo para elegir el stage de un Dockerfile multi-stage; construye siempre
+# el ultimo. En docker/api.Dockerfile y docker/worker.Dockerfile el ultimo
+# stage es `runtime` justamente por eso, y el stage `dev` queda antes, fuera
+# del camino. Si algun dia se agrega un stage despues de `runtime`, este
+# Blueprint deja de construir lo que cree que construye.
+
+# Variables compartidas por api y worker. Existen como grupo para cargar una
+# sola vez la cadena de Neon, la de Upstash y las credenciales SMTP, en vez
+# de repetirlas (y arriesgar que diverjan) en cada servicio.
+envVarGroups:
+  - name: tasks-platform-shared
+    envVars:
+      # Cadena de conexion de Postgres. Sale del panel de Neon, en la
+      # pestaña "Connection string" del proyecto. Usar la variante pooled
+      # e incluir `?sslmode=require`.
+      - key: DATABASE_URL
+        sync: false
+      # URL de Redis. Sale del panel de Upstash, en "Connect" > "redis://".
+      # Upstash exige TLS: el esquema correcto es `rediss://` (doble s).
+      - key: REDIS_URL
+        sync: false
+      # URL publica de la API, la que Render asigna al servicio `api` tras
+      # el primer despliegue (https://<nombre>.onrender.com). Se usa para
+      # construir enlaces dentro de los correos.
+      - key: APP_PUBLIC_URL
+        sync: false
+      # URL publica del cliente web. No existe hasta la Fase 7: hasta
+      # entonces, apuntarla a la misma URL de la API es suficiente para que
+      # arranque (el esquema solo exige que sea una URL valida).
+      - key: WEB_APP_URL
+        sync: false
+      # --- SMTP (un relay real, no Mailpit: Mailpit es solo local) ---
+      # Los cuatro salen del proveedor SMTP elegido (Resend, Brevo,
+      # Mailgun, SendGrid, ...), de su seccion de credenciales SMTP.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      # Remitente que ve quien recibe el correo. Tiene que ser un dominio
+      # verificado en el proveedor SMTP, o los correos no salen.
+      - key: SMTP_FROM
+        sync: false
+
+services:
+  # --- API ---
+  # Servicio web: recibe el trafico HTTP publico. Su entrypoint corre
+  # `prisma migrate deploy` antes de levantar Express, asi que cada
+  # despliegue deja la base de Neon al dia (docker/api-entrypoint.sh).
+  - type: web
+    name: tasks-platform-api
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./docker/api.Dockerfile
+    # El contexto es la raiz del monorepo, no docker/: los Dockerfiles
+    # copian package.json, pnpm-workspace.yaml, apps/ y packages/.
+    dockerContext: .
+    healthCheckPath: /health/live
+    envVars:
+      - fromGroup: tasks-platform-shared
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      # Nunca `debug` en produccion: el logger toma el nivel de aca, y a
+      # nivel debug pino imprime cuerpos y metadatos de cada peticion.
+      - key: LOG_LEVEL
+        value: info
+      # Secreto de firma de los access tokens (HS256). Render genera un
+      # valor aleatorio en el primer despliegue y nadie -- ni el usuario ni
+      # este repositorio -- necesita verlo nunca.
+      - key: JWT_SECRET
+        generateValue: true
+      # Origen permitido para CORS. Hasta la Fase 7 no hay front desplegado:
+      # se completa a mano con el dominio del cliente web cuando exista.
+      - key: CORS_ORIGIN
+        sync: false
+      # El front vivira en otro dominio que el de la API, asi que la cookie
+      # del refresh token es cross-site y necesita SameSite=None (que el
+      # navegador solo acepta junto a Secure, garantizado por el TLS de
+      # Render y por NODE_ENV=production).
+      - key: COOKIE_SAME_SITE
+        value: none
+
+  # --- Worker ---
+  # Tambien `type: web`, no `worker`: los Background Workers de Render no
+  # tienen capa gratuita. Por dentro este proceso es BullMQ consumiendo
+  # Redis; el servidor HTTP que expone (apps/worker/src/health-server.ts)
+  # existe solo para que Render tenga un puerto que sondear.
+  - type: web
+    name: tasks-platform-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./docker/worker.Dockerfile
+    dockerContext: .
+    # Verificado contra health-server.ts: el worker responde 200 en
+    # /health/live y 200/503 en /health/ready. No expone `/health` a secas.
+    healthCheckPath: /health/live
+    envVars:
+      - fromGroup: tasks-platform-shared
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      # Puerto del health server. Render lo detecta solo, pero declararlo
+      # evita depender de esa deteccion.
+      - key: WORKER_PORT
+        value: 3100
