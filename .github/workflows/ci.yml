@@ -82,11 +82,23 @@ jobs:
         run: pnpm test
 
   docker-build:
-    name: Build API Docker image
+    name: Build Docker images
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2
 
-      - name: Build API image
+      # El target `dev`, el que usa docker-compose para desarrollo local.
+      - name: Build API dev image
         run: docker compose build api
+
+      # Los targets `runtime`, que son los que Render construye y despliega
+      # (ver render.yaml). Render siempre construye el ultimo stage del
+      # Dockerfile, que es exactamente lo que hace `--target runtime` aca
+      # mientras `runtime` siga siendo el ultimo. Sin este paso, un error en
+      # la imagen de produccion solo aparece en el despliegue.
+      - name: Build API production image
+        run: docker build --target runtime -f docker/api.Dockerfile .
+
+      - name: Build worker production image
+        run: docker build --target runtime -f docker/worker.Dockerfile .
