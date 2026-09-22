@@ -1,4 +1,8 @@
 **/node_modules
+# La store local de pnpm (cientos de MB) no la usa ningun stage: los
+# Dockerfiles instalan desde el registro con --frozen-lockfile. Sin esta
+# linea viaja entera en el contexto de build, en cada build.
+.pnpm-store
 **/dist
 **/coverage
 **/.git

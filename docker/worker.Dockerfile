@@ -58,8 +58,11 @@ COPY --from=build --chown=nodeapp:nodejs /app/packages/contracts/dist ./packages
 COPY --from=build --chown=nodeapp:nodejs /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=build --chown=nodeapp:nodejs /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=build --chown=nodeapp:nodejs /app/packages/shared/dist ./packages/shared/dist
+COPY --chown=nodeapp:nodejs docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
+RUN chmod +x /usr/local/bin/worker-entrypoint.sh
 
 ENV NODE_ENV=production
 USER nodeapp
 EXPOSE 3100
-CMD ["node", "apps/worker/dist/index.js"]
+# See docker/worker-entrypoint.sh: unlike the api's, it runs no migration.
+ENTRYPOINT ["/usr/local/bin/worker-entrypoint.sh"]

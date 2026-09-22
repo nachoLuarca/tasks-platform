@@ -81,8 +81,20 @@ COPY --from=build --chown=nodeapp:nodejs /app/packages/contracts/dist ./packages
 COPY --from=build --chown=nodeapp:nodejs /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=build --chown=nodeapp:nodejs /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=build --chown=nodeapp:nodejs /app/packages/shared/dist ./packages/shared/dist
+# The Prisma schema and its migration history: `prisma migrate deploy` reads
+# both at container start (see docker/api-entrypoint.sh). The compiled code
+# doesn't need them -- the generated client already lives in node_modules --
+# but the migration step does.
+COPY --from=build --chown=nodeapp:nodejs /app/apps/api/prisma ./apps/api/prisma
+COPY --chown=nodeapp:nodejs docker/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
+RUN chmod +x /usr/local/bin/api-entrypoint.sh
 
 ENV NODE_ENV=production
+# The prisma CLI otherwise phones home for version checks and caches the
+# result under $HOME, which this user doesn't have (--no-create-home).
+ENV CHECKPOINT_DISABLE=1
 USER nodeapp
 EXPOSE 3000
-CMD ["node", "apps/api/dist/server.js"]
+# ENTRYPOINT, not CMD: migrations must run on every start, and an entrypoint
+# can't be skipped by passing a command to `docker run`.
+ENTRYPOINT ["/usr/local/bin/api-entrypoint.sh"]

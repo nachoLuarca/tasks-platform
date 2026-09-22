@@ -1,0 +1,11 @@
+# Normaliza los finales de linea al guardar en git.
+* text=auto
+
+# Los scripts que entran a una imagen de Docker tienen que quedar con LF en el
+# disco, siempre. Si un checkout en Windows (con core.autocrlf=true) los deja
+# con CRLF, el `#!/bin/sh` pasa a ser `#!/bin/sh\r` y el contenedor muere al
+# arrancar con "no such file or directory", un error que no menciona el
+# verdadero motivo. Lo mismo para el Dockerfile y para docker-compose.yml.
+*.sh text eol=lf
+*.Dockerfile text eol=lf
+Dockerfile text eol=lf
