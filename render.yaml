@@ -70,7 +70,7 @@ services:
     name: tasks-platform-api
     runtime: docker
     plan: free
-    region: oregon
+    region: virginia
     branch: main
     autoDeploy: true
     dockerfilePath: ./docker/api.Dockerfile
@@ -113,7 +113,7 @@ services:
     name: tasks-platform-worker
     runtime: docker
     plan: free
-    region: oregon
+    region: virginia
     branch: main
     autoDeploy: true
     dockerfilePath: ./docker/worker.Dockerfile

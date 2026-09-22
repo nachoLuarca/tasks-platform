@@ -63,7 +63,9 @@ Esta rama prepara únicamente lo que vive en el repositorio.
 
 9. **`GET /health/live` es el endpoint que usa Render para decidir si el
    servicio sigue vivo**, y el mismo que usa el pinger externo para evitar
-   que duerma. El worker expone el suyo propio en `/health`.
+   que duerma. El worker expone el suyo propio en `/health/live`, la misma
+   ruta que la API: `apps/worker/src/health-server.ts` sirve `/health/live` y
+   `/health/ready`, y devuelve 404 en cualquier otra, `/health` incluida.
 
 ---
 
@@ -133,7 +135,7 @@ Se hace después de que esta rama esté mergeada:
 5. Completar en el panel de Render las variables que no se generan solas:
    la cadena de Neon, la URL de Upstash, y las credenciales SMTP
 6. Configurar un monitor gratuito en UptimeRobot contra `/health/live` de la
-   API y `/health` del worker, cada 5 a 10 minutos
+   API y `/health/live` del worker, cada 5 a 10 minutos
 
 ---
 
