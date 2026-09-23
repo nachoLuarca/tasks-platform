@@ -1,6 +1,6 @@
-import { Queue, type ConnectionOptions, type JobsOptions } from 'bullmq';
+import { Queue, type ConnectionOptions, type JobsOptions, type QueueOptions } from 'bullmq';
 
-import { createQueueConnection } from '../db/index.js';
+import { createQueueConnection, REDIS_COMMAND_TIMEOUT_MS } from '../db/index.js';
 
 /**
  * Names shared by every producer (api, or the dispatcher inside the worker)
@@ -51,9 +51,31 @@ export const ACCOUNT_EMAIL_JOB_OPTIONS: JobsOptions = {
 export const PASSWORD_RESET_REQUEST_JOB_OPTIONS: JobsOptions = ACCOUNT_EMAIL_JOB_OPTIONS;
 
 let connection: ConnectionOptions | undefined;
+
+/**
+ * The connection every *producer* in this file enqueues through. Unlike a
+ * BullMQ Worker's connection it never issues a blocking command -- adding a
+ * job is an ordinary EVALSHA -- so it opts back into `commandTimeout`
+ * (createQueueConnection turns it off by default).
+ */
 function sharedConnection(): ConnectionOptions {
-  connection ??= createQueueConnection();
+  connection ??= createQueueConnection({ commandTimeout: REDIS_COMMAND_TIMEOUT_MS });
   return connection;
+}
+
+/**
+ * `commandTimeout` alone is not enough to make a producer fail fast. Before
+ * issuing any command, a new `Queue` waits for its connection to emit
+ * 'ready' or 'end' (BullMQ's RedisConnection.waitUntilReady), and connection
+ * errors don't interrupt that wait. With `maxRetriesPerRequest: null` ioredis
+ * reconnects forever and never emits 'end', so while Redis is unreachable an
+ * `emailQueue().add(...)` -- and the HTTP request that triggered it
+ * (registration enqueues a verification email) -- hung for the whole outage.
+ * Skipping that wait sends the commands straight to ioredis, where
+ * `commandTimeout` rejects them within seconds.
+ */
+function producerOptions(): QueueOptions {
+  return { connection: sharedConnection(), skipWaitingForReady: true };
 }
 
 export interface WebhookDeliveryJobData {
@@ -100,13 +122,13 @@ export interface PasswordResetRequestJobData {
  * for a BullMQ Worker's polling loop it will never use.
  */
 export function webhookDeliveryQueue(): Queue<WebhookDeliveryJobData> {
-  return new Queue<WebhookDeliveryJobData>(QUEUE_NAMES.webhookDelivery, { connection: sharedConnection() });
+  return new Queue<WebhookDeliveryJobData>(QUEUE_NAMES.webhookDelivery, producerOptions());
 }
 
 export function emailQueue(): Queue<EmailJobData> {
-  return new Queue<EmailJobData>(QUEUE_NAMES.email, { connection: sharedConnection() });
+  return new Queue<EmailJobData>(QUEUE_NAMES.email, producerOptions());
 }
 
 export function passwordResetRequestQueue(): Queue<PasswordResetRequestJobData> {
-  return new Queue<PasswordResetRequestJobData>(QUEUE_NAMES.passwordResetRequest, { connection: sharedConnection() });
+  return new Queue<PasswordResetRequestJobData>(QUEUE_NAMES.passwordResetRequest, producerOptions());
 }
