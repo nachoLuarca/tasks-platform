@@ -1,6 +1,24 @@
 import type { ValidationProblemDetails } from '@tasks-platform/contracts';
 
-import { AppError, ValidationError } from './app-error.js';
+import { AppError, ServiceUnavailableError, ValidationError } from './app-error.js';
+
+/**
+ * What ioredis rejects a command with when Redis can't be reached: its retry
+ * budget ran out (the general-purpose client), the command outlived
+ * `commandTimeout` (every client, see packages/shared/src/db/redis-options.ts),
+ * or the connection was already closed. ioredis doesn't export these classes,
+ * so they're matched by name and message; test/unit/redis-unavailable.test.ts
+ * pins both against the real library so an upgrade that renames them fails
+ * there instead of turning outages back into 500s.
+ */
+function isRedisUnavailable(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'MaxRetriesPerRequestError' ||
+      error.message === 'Command timed out' ||
+      error.message === 'Connection is closed.')
+  );
+}
 
 /**
  * A body that isn't parseable JSON never reaches a route handler: Express 5's
@@ -42,6 +60,21 @@ export function toProblemDetails(error: unknown, instance: string | undefined): 
 
   if (isMalformedJsonBody(error)) {
     const problem = new ValidationError('The request body is not valid JSON');
+    return {
+      type: problem.type,
+      title: problem.title,
+      status: problem.status,
+      detail: problem.detail,
+      instance,
+      errors: undefined,
+    };
+  }
+
+  // A Redis outage is not a bug in this service: 503 tells the client to
+  // retry later, which a 500 doesn't. Enqueueing an email (resend
+  // verification, forgot password, invitations) fails this way.
+  if (isRedisUnavailable(error)) {
+    const problem = new ServiceUnavailableError('The service is temporarily unavailable, try again shortly');
     return {
       type: problem.type,
       title: problem.title,

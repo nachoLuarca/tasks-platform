@@ -2,13 +2,20 @@ import type { RequestHandler } from 'express';
 
 import { config } from '../config/index.js';
 import { redis } from '../db/index.js';
-import { TooManyRequestsError } from '../errors/index.js';
+import { ServiceUnavailableError, TooManyRequestsError } from '../errors/index.js';
 import { logger } from '../logger/index.js';
 
 /**
  * Fixed-window counter backed by Redis so the limit holds across instances.
- * Disabled entirely via RATE_LIMIT_ENABLED (tests turn it off). If Redis is
- * unreachable, requests are allowed through rather than locking out auth.
+ * Disabled entirely via RATE_LIMIT_ENABLED (tests turn it off).
+ *
+ * If Redis is unreachable the request is refused with 503, not waved through.
+ * Letting it past would mean the limiter silently stops existing exactly when
+ * it matters most: every route behind it is an unauthenticated credential
+ * endpoint (register, login, refresh, password reset), so an outage would
+ * open an unmetered window for credential stuffing. The commands here are
+ * bounded by `commandTimeout` (packages/shared/src/db/redis-options.ts), so
+ * this branch is reached within seconds rather than after the outage ends.
  */
 export function createRateLimiter(bucket: string): RequestHandler {
   return async (req, _res, next) => {
@@ -37,8 +44,8 @@ export function createRateLimiter(bucket: string): RequestHandler {
 
       next();
     } catch (error) {
-      logger.error({ err: error, bucket }, 'Rate limiter unavailable, allowing request through');
-      next();
+      logger.error({ err: error, bucket }, 'Rate limiter unavailable, refusing the request');
+      next(new ServiceUnavailableError('The service is temporarily unavailable, try again shortly'));
     }
   };
 }

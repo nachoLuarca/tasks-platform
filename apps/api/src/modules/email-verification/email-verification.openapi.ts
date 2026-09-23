@@ -18,6 +18,7 @@ export function registerEmailVerificationPaths(registry: OpenAPIRegistry): void 
     errors: {
       404: 'Token desconocido, ya usado o vencido (los tres casos responden igual).',
       429: 'Demasiados intentos desde esta IP.',
+      503: 'Redis no responde y el limitador de intentos no puede evaluarse.',
     },
   });
 

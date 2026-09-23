@@ -90,6 +90,23 @@ export class UnprocessableEntityError extends AppError {
   }
 }
 
+/**
+ * A dependency this request needs (today: Redis, for the attempt limiter) is
+ * unreachable. Deliberately distinct from a 500: nothing is broken in the
+ * request or in this service's own logic, and retrying later is expected to
+ * work, which is exactly what 503 tells a client.
+ */
+export class ServiceUnavailableError extends AppError {
+  constructor(detail?: string) {
+    super({
+      status: 503,
+      type: 'https://tasks-platform.dev/errors/service-unavailable',
+      title: 'Service Unavailable',
+      detail,
+    });
+  }
+}
+
 export class TooManyRequestsError extends AppError {
   public readonly retryAfterSeconds: number;
 
