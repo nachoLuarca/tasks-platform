@@ -6,6 +6,15 @@ mano. Las entradas de `v0.1.0` a `v0.7.0` se reconstruyeron una sola vez, a part
 cada fase y de los commits `feat` y `fix` que cada uno incluye, con el mismo formato que usa
 release-please.
 
+## [0.8.1](https://github.com/nachoLuarca/tasks-platform/compare/v0.8.0...v0.8.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **api:** answer malformed JSON bodies with 400 Problem Details ([8262f83](https://github.com/nachoLuarca/tasks-platform/commit/8262f83271bcfd458d3e0165ab6d5c33b42225a5))
+* **api:** respond 503 Problem Details when Redis is unreachable ([b0e9eb7](https://github.com/nachoLuarca/tasks-platform/commit/b0e9eb725aa4d08095bbb8bbdbb6bce5acdb301f))
+* **shared:** use TLS for rediss:// and fail fast when Redis is down ([39abda0](https://github.com/nachoLuarca/tasks-platform/commit/39abda029abf6b80b45a9cf15f54db14925263ff))
+
 ## [0.8.0](https://github.com/nachoLuarca/tasks-platform/compare/v0.7.0...v0.8.0) (2026-09-14)
 
 
