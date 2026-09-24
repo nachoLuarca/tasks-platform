@@ -23,7 +23,7 @@ export function registerPasswordResetPaths(registry: OpenAPIRegistry): void {
     auth: 'public',
     body: forgotPasswordRequestSchema.openapi('ForgotPasswordRequest'),
     responses: { 202: jsonResponse('Solicitud aceptada.', forgotPasswordResponseSchema.openapi('ForgotPasswordResponse')) },
-    errors: { 429: 'Demasiados intentos desde esta IP (igual para cualquier correo).' },
+    errors: { 429: 'Demasiados intentos desde esta IP (igual para cualquier correo).', 503: 'Redis no responde y el limitador de intentos no puede evaluarse.' },
   });
 
   registerOperation(registry, {
@@ -37,7 +37,7 @@ export function registerPasswordResetPaths(registry: OpenAPIRegistry): void {
     responses: {
       200: jsonResponse('El token es valido.', resetPasswordTokenStatusResponseSchema.openapi('ResetPasswordTokenStatus')),
     },
-    errors: { 404: INVALID_TOKEN, 429: 'Demasiados intentos desde esta IP.' },
+    errors: { 404: INVALID_TOKEN, 429: 'Demasiados intentos desde esta IP.', 503: 'Redis no responde y el limitador de intentos no puede evaluarse.' },
   });
 
   registerOperation(registry, {
@@ -51,6 +51,6 @@ export function registerPasswordResetPaths(registry: OpenAPIRegistry): void {
     auth: 'public',
     body: resetPasswordRequestSchema.openapi('ResetPasswordRequest'),
     responses: { 204: emptyResponse('Contraseña restablecida.') },
-    errors: { 404: INVALID_TOKEN, 429: 'Demasiados intentos desde esta IP.' },
+    errors: { 404: INVALID_TOKEN, 429: 'Demasiados intentos desde esta IP.', 503: 'Redis no responde y el limitador de intentos no puede evaluarse.' },
   });
 }

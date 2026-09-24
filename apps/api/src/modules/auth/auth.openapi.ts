@@ -41,6 +41,7 @@ export function registerAuthPaths(registry: OpenAPIRegistry): void {
     errors: {
       409: 'Ya existe una cuenta con ese correo.',
       429: 'Demasiados intentos desde esta IP.',
+      503: 'Redis no responde y el limitador de intentos no puede evaluarse.',
     },
   });
 
@@ -56,6 +57,7 @@ export function registerAuthPaths(registry: OpenAPIRegistry): void {
     errors: {
       401: 'Correo o contraseña incorrectos (los dos casos responden igual).',
       429: 'Demasiados intentos desde esta IP.',
+      503: 'Redis no responde y el limitador de intentos no puede evaluarse.',
     },
   });
 
@@ -72,6 +74,7 @@ export function registerAuthPaths(registry: OpenAPIRegistry): void {
     errors: {
       401: 'Falta la cookie, o el refresh token es invalido, esta vencido, fue revocado o ya se habia usado.',
       429: 'Demasiados intentos desde esta IP.',
+      503: 'Redis no responde y el limitador de intentos no puede evaluarse.',
     },
   });
 

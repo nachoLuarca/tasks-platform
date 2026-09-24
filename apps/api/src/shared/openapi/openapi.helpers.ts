@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
   TooManyRequestsError,
+  ServiceUnavailableError,
   UnauthorizedError,
   UnprocessableEntityError,
   ValidationError,
@@ -48,7 +49,7 @@ export type ApiTag = (typeof API_TAGS)[number]['name'];
 const ProblemDetails = problemDetailsSchema.openapi('ProblemDetails');
 const ValidationProblemDetails = validationProblemDetailsSchema.openapi('ValidationProblemDetails');
 
-export type ProblemStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429;
+export type ProblemStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503;
 
 /**
  * Real error instances, rendered below by the same function the error
@@ -63,6 +64,7 @@ const PROBLEM_EXAMPLES: Record<ProblemStatus, AppError> = {
   409: new ConflictError(),
   422: new UnprocessableEntityError(),
   429: new TooManyRequestsError(60),
+  503: new ServiceUnavailableError(),
 };
 
 const EXAMPLE_REQUEST_ID = '3f0c8a2e-5b1d-4c7e-9a6f-2d8e4b1c7a90';
@@ -75,6 +77,7 @@ const DEFAULT_PROBLEM_DESCRIPTIONS: Record<ProblemStatus, string> = {
   409: 'La operacion choca con el estado actual del recurso.',
   422: 'La peticion es valida pero no se puede procesar.',
   429: 'Demasiados intentos; reintentar despues de `Retry-After` segundos.',
+  503: 'Una dependencia necesaria para la peticion (Redis) no responde; reintentar en unos segundos.',
 };
 
 function uuidParameter(description: string): ZodTypeAny {
