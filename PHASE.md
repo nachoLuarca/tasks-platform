@@ -12,7 +12,7 @@ artificial. El README documenta en qué versión quedó el primer despliegue
 público.
 
 Fase corta. Gran parte del trabajo es configuración en paneles externos que
-Claude Code no puede tocar — eso lo hace el usuario a mano, guiado aparte.
+no se gestiona desde el repositorio — eso se hace a mano, guiado aparte.
 Esta rama prepara únicamente lo que vive en el repositorio.
 
 ---
