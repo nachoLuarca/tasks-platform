@@ -59,6 +59,9 @@ export async function deliverWebhookAttempt(params: DeliverWebhookParams): Promi
         [WEBHOOK_SIGNATURE_HEADER]: header,
       },
       body,
+      // A 3xx is a failed attempt: following it would let a public receiver
+      // bounce the POST to an internal address the URL check never saw.
+      redirect: 'manual',
       signal: controller.signal,
     });
     statusCode = response.status;

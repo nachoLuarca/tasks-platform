@@ -24,6 +24,13 @@ function loadConfig() {
 
   const env = result.data;
 
+  if (sharedConfig.isProduction && env.WEBHOOK_ALLOW_PRIVATE_URLS) {
+    console.error(
+      'Invalid environment configuration:\n  - WEBHOOK_ALLOW_PRIVATE_URLS: cannot be true when NODE_ENV=production',
+    );
+    process.exit(1);
+  }
+
   // `cors` reflects the caller's Origin for '*' and we send credentials, so a
   // wildcard would let any site call the API with the user's refresh cookie.
   if (sharedConfig.isProduction && env.CORS_ORIGIN.split(',').some((origin) => origin.trim() === '*')) {
@@ -60,6 +67,9 @@ function loadConfig() {
       enabled: env.RATE_LIMIT_ENABLED,
       windowMs: env.RATE_LIMIT_WINDOW_MS,
       maxAttempts: env.RATE_LIMIT_MAX_ATTEMPTS,
+    }),
+    webhooks: Object.freeze({
+      allowPrivateUrls: env.WEBHOOK_ALLOW_PRIVATE_URLS,
     }),
     accountEmails: Object.freeze({
       verificationMaxPerHour: env.EMAIL_VERIFICATION_MAX_PER_HOUR,

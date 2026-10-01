@@ -39,6 +39,11 @@ export const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
 
+  // --- Webhooks ---
+  // Lets a webhook point at http:// and at loopback/private addresses. Only for
+  // local development, where the receiver runs on localhost; never in production.
+  WEBHOOK_ALLOW_PRIVATE_URLS: booleanFromString('false'),
+
   // --- Account emails ---
   // Per-account ceiling on verification emails in any rolling hour, the
   // one sent at registration included. Unlike RATE_LIMIT_*, this is a
