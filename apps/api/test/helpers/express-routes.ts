@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
 
 interface Layer {
-  route?: { path: string; methods: Record<string, boolean> };
+  route?: { path: string; methods: Record<string, boolean>; stack?: Layer[] };
   handle: { stack?: Layer[] };
   mountPath?: string;
 }
@@ -16,6 +16,8 @@ export interface RegisteredRoute {
   method: string;
   /** Full Express path, e.g. `/v1/organizations/:organizationId`. */
   path: string;
+  /** Whether `requireAuth` runs before the handler, on the route itself or on a router above it. */
+  requiresAuth: boolean;
 }
 
 const RECORDING = Symbol('recordsMountPaths');
@@ -49,26 +51,35 @@ export function recordMountPaths(): void {
   prototype.use = use;
 }
 
-/** Every method + full path the app's router answers, sub-routers included. */
-export function listRoutes(app: Express): RegisteredRoute[] {
+/**
+ * Every method + full path the app's router answers, sub-routers included.
+ * `authGate` is the middleware that authenticates a request (`requireAuth`):
+ * routes it guards, directly or through an earlier `router.use(authGate)`,
+ * come back with `requiresAuth`.
+ */
+export function listRoutes(app: Express, authGate: unknown): RegisteredRoute[] {
   const { router } = app as unknown as { router: RouterLike };
-  return collectRoutes(router.stack, '/');
+  return collectRoutes(router.stack, '/', authGate, false);
 }
 
-function collectRoutes(stack: Layer[], prefix: string): RegisteredRoute[] {
+function collectRoutes(stack: Layer[], prefix: string, authGate: unknown, guarded: boolean): RegisteredRoute[] {
   const routes: RegisteredRoute[] = [];
+  let guardedHere = guarded;
 
   for (const layer of stack) {
-    if (layer.route) {
+    if (layer.handle === authGate) {
+      guardedHere = true;
+    } else if (layer.route) {
       const path = joinPaths(prefix, layer.route.path);
+      const requiresAuth = guardedHere || (layer.route.stack ?? []).some((handler) => handler.handle === authGate);
       for (const method of Object.keys(layer.route.methods).filter((name) => name !== '_all')) {
-        routes.push({ method, path });
+        routes.push({ method, path, requiresAuth });
       }
     } else if (layer.handle.stack) {
       if (layer.mountPath === undefined) {
         throw new Error('Found a router mounted before recordMountPaths() ran; import the app after calling it');
       }
-      routes.push(...collectRoutes(layer.handle.stack, joinPaths(prefix, layer.mountPath)));
+      routes.push(...collectRoutes(layer.handle.stack, joinPaths(prefix, layer.mountPath), authGate, guardedHere));
     }
   }
 
