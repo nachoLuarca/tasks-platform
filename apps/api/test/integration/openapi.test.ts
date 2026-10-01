@@ -39,10 +39,12 @@ const UNDOCUMENTED_ROUTES = [
 const PROBLEM_SCHEMA_REFS = ['#/components/schemas/ProblemDetails', '#/components/schemas/ValidationProblemDetails'];
 
 let app: Express;
+let requireAuth: unknown;
 
 beforeAll(async () => {
   recordMountPaths();
   const { buildApp } = await import('../../src/app.js');
+  ({ requireAuth } = await import('../../src/modules/auth/require-auth.middleware.js'));
   app = buildApp();
 });
 
@@ -90,7 +92,7 @@ describe('GET /openapi.json', () => {
 
   it('documents every route the Express router registers under /v1, and nothing it does not', async () => {
     const document = await fetchDocument();
-    const registered = listRoutes(app).map(({ method, path }) => `${method} ${path.replace(/:([A-Za-z]+)/g, '{$1}')}`);
+    const registered = listRoutes(app, requireAuth).map(({ method, path }) => `${method} ${path.replace(/:([A-Za-z]+)/g, '{$1}')}`);
 
     const registeredUnderV1 = registered.filter((route) => route.split(' ')[1]?.startsWith('/v1/'));
     const registeredElsewhere = registered.filter((route) => !registeredUnderV1.includes(route));
@@ -99,6 +101,20 @@ describe('GET /openapi.json', () => {
     // from the document; a documented endpoint that no longer exists, as extra.
     expect([...registeredUnderV1].sort()).toEqual(listOperations(document).map(({ key }) => key).sort());
     expect([...registeredElsewhere].sort()).toEqual(UNDOCUMENTED_ROUTES);
+  });
+
+  it('marks an operation as authenticated exactly when its Express route sits behind requireAuth', async () => {
+    const document = await fetchDocument();
+    const operations = new Map(listOperations(document).map(({ key, operation }) => [key, operation]));
+
+    for (const { method, path, requiresAuth } of listRoutes(app, requireAuth)) {
+      const operation = operations.get(`${method} ${path.replace(/:([A-Za-z]+)/g, '{$1}')}`);
+      if (!operation) {
+        continue; // health and docs routes, covered by the test above
+      }
+      const schemes = (operation.security ?? []).flatMap((requirement) => Object.keys(requirement));
+      expect(schemes.includes('bearerAuth'), `${method} ${path}`).toBe(requiresAuth);
+    }
   });
 
   it('gives every operation a unique operationId, a summary and at least one success response', async () => {

@@ -35,6 +35,7 @@ export function registerEmailVerificationPaths(registry: OpenAPIRegistry): void 
     errors: {
       409: 'El correo ya esta verificado.',
       429: 'Se alcanzo el limite de reenvios por hora de esta cuenta.',
+      503: 'Redis no responde y el correo no se puede encolar.',
     },
   });
 }

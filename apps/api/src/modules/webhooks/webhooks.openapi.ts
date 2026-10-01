@@ -93,7 +93,7 @@ export function registerWebhooksPaths(registry: OpenAPIRegistry): void {
     auth: 'bearer',
     permission: 'webhook:manage',
     responses: { 202: emptyResponse('Evento de prueba encolado.') },
-    errors: { 404: WEBHOOK_NOT_FOUND },
+    errors: { 404: WEBHOOK_NOT_FOUND, 503: 'Redis no responde y la entrega de prueba no se puede encolar.' },
   });
 
   registerOperation(registry, {
