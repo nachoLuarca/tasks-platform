@@ -85,7 +85,7 @@ export function buildOpenApiDocument(): OpenApiDocument {
       title: 'tasks-platform API',
       version: readApiVersion(),
       description:
-        'API multi-tenant de gestion de tareas. Todas las rutas llevan el prefijo `/v1`, que versiona el contrato HTTP. Los errores responden en formato RFC 9457 (`application/problem+json`).\n\nEste documento se genera al arrancar desde los esquemas Zod de `packages/contracts`, los mismos que validan cada peticion.',
+        'API multi-tenant de gestion de tareas. Todas las rutas llevan el prefijo `/v1`, que versiona el contrato HTTP. Los errores responden en formato RFC 9457 (`application/problem+json`): `400` cuando el cuerpo o la consulta no pasan la validacion (tambien si el cuerpo no es JSON valido, en cualquier ruta), `422` cuando la peticion es valida pero una regla de negocio la rechaza.\n\nEste documento se genera al arrancar desde los esquemas Zod de `packages/contracts`, los mismos que validan cada peticion.',
     },
     tags: API_TAGS.map((tag) => ({ ...tag })),
   });

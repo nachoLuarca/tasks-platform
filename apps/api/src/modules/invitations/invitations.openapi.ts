@@ -28,6 +28,7 @@ export function registerInvitationsPaths(registry: OpenAPIRegistry): void {
     errors: {
       409: 'La persona ya es miembro, o ya tiene una invitacion pendiente.',
       422: 'La organizacion o quien invita ya no existen.',
+      503: 'Redis no responde y el correo de la invitacion no se puede encolar.',
     },
   });
 
