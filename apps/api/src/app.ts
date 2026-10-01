@@ -17,16 +17,19 @@ import { requestIdMiddleware, requestLoggerMiddleware } from './shared/http/inde
 import { createDocsRouter } from './shared/openapi/index.js';
 
 function resolveCorsOrigin(): boolean | string[] {
-  if (config.cors.origin === '*') {
-    return true;
-  }
-  return config.cors.origin.split(',').map((origin) => origin.trim());
+  const origins = config.cors.origin.split(',').map((origin) => origin.trim());
+  // '*' is only reachable outside production -- config.ts refuses it there.
+  return origins.includes('*') ? true : origins;
 }
 
 export function buildApp(): Express {
   const app = express();
 
   app.disable('x-powered-by');
+  if (config.trustProxyHops > 0) {
+    // Without this, req.ip is the proxy's address for every client and the rate limiter shares one counter.
+    app.set('trust proxy', config.trustProxyHops);
+  }
 
   app.use(requestIdMiddleware);
   app.use(requestLoggerMiddleware);

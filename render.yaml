@@ -103,6 +103,11 @@ services:
       # Render y por NODE_ENV=production).
       - key: COOKIE_SAME_SITE
         value: none
+      # Render pone un proxy delante de la API. Sin esto `req.ip` es la IP del
+      # proxy para todos los clientes y el limite de intentos es un unico
+      # contador global (ver docs/security-audit.md, SEC-04).
+      - key: TRUST_PROXY_HOPS
+        value: 1
 
   # --- Worker ---
   # Tambien `type: web`, no `worker`: los Background Workers de Render no
