@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 
 import type { TransferOwnershipRequest, UpdateMemberRoleRequest } from '@tasks-platform/contracts';
 
-import { requireUserId } from '../../shared/authorization/index.js';
+import { requireUserActor, requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { toMemberResponse } from './members.mapper.js';
 import { membersService } from './members.service.js';
@@ -30,7 +30,12 @@ export const membersController = {
     const body = req.body as UpdateMemberRoleRequest;
     const targetUserId = req.params.userId as string;
 
-    const membership = await membersService.updateRole(organizationId, targetUserId, body.role);
+    const membership = await membersService.updateRole(
+      organizationId,
+      requireUserActor(req).role,
+      targetUserId,
+      body.role,
+    );
     res.status(200).json({
       userId: membership.userId,
       role: membership.role,
@@ -42,7 +47,7 @@ export const membersController = {
     const { organizationId } = getMembershipContext(req);
     const targetUserId = req.params.userId as string;
 
-    await membersService.remove(organizationId, targetUserId);
+    await membersService.remove(organizationId, requireUserActor(req).role, targetUserId);
     res.status(204).send();
   }) satisfies RequestHandler,
 

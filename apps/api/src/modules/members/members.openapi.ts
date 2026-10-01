@@ -5,6 +5,8 @@ import { memberListResponseSchema, memberResponseSchema, updateMemberRoleRequest
 import { emptyResponse, jsonResponse, registerOperation } from '../../shared/openapi/index.js';
 
 const BASE = '/v1/organizations/:organizationId/members';
+const HIERARCHY_FORBIDDEN =
+  'Falta el permiso `member:update-role` / `member:remove`, o el miembro objetivo tiene un rol igual o superior al de quien llama (solo el owner gestiona a un admin).';
 const MEMBER_NOT_FOUND = 'La organizacion no existe, quien llama no es miembro, o el usuario indicado no es miembro.';
 
 /** PATCH answers with only these three fields, not the whole member -- see membersController.updateRole. */
@@ -47,6 +49,7 @@ export function registerMembersPaths(registry: OpenAPIRegistry): void {
     body: updateMemberRoleRequestSchema.openapi('UpdateMemberRoleRequest'),
     responses: { 200: jsonResponse('Rol actualizado.', memberRoleUpdatedSchema) },
     errors: {
+      403: HIERARCHY_FORBIDDEN,
       404: MEMBER_NOT_FOUND,
       409: 'Se intento cambiar el rol del owner o asignar `OWNER` directamente.',
     },
@@ -61,6 +64,6 @@ export function registerMembersPaths(registry: OpenAPIRegistry): void {
     auth: 'bearer',
     permission: 'member:remove',
     responses: { 204: emptyResponse('Miembro expulsado.') },
-    errors: { 404: MEMBER_NOT_FOUND, 409: 'El owner no se puede expulsar; primero hay que transferir la propiedad.' },
+    errors: { 403: HIERARCHY_FORBIDDEN, 404: MEMBER_NOT_FOUND, 409: 'El owner no se puede expulsar; primero hay que transferir la propiedad.' },
   });
 }

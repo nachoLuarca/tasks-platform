@@ -1,4 +1,4 @@
-export { PERMISSIONS, roleHasPermission, permissionsForRole, canActOnResource, isPermission } from './permissions.js';
+export { PERMISSIONS, roleHasPermission, permissionsForRole, canActOnResource, isPermission, canManageRole, canGrantRole } from './permissions.js';
 export type { Permission } from './permissions.js';
 export { actorHasPermission, canActorActOnResource, actorColumns } from './actor.js';
 export type { Actor, UserActor } from './actor.js';
