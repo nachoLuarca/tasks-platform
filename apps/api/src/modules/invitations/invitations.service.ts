@@ -1,6 +1,7 @@
 import type { Role } from '@tasks-platform/contracts';
 import { EMAIL_JOB_OPTIONS, emailQueue, sharedConfig } from '@tasks-platform/shared';
 
+import { canGrantRole } from '../../shared/authorization/index.js';
 import { prisma } from '../../shared/db/index.js';
 import { ConflictError, ForbiddenError, NotFoundError, UnprocessableEntityError } from '../../shared/errors/index.js';
 import {
@@ -20,7 +21,20 @@ function expiryDate(): Date {
 }
 
 export const invitationsService = {
-  async create(organizationId: string, invitedById: string, email: string, role: Role): Promise<InvitationEntity> {
+  async create(
+    organizationId: string,
+    invitedById: string,
+    inviterRole: Role,
+    email: string,
+    role: Role,
+  ): Promise<InvitationEntity> {
+    if (role === 'OWNER') {
+      throw new ConflictError('Use the transfer-ownership endpoint to change the organization owner');
+    }
+    if (!canGrantRole(inviterRole, role)) {
+      throw new ForbiddenError('You cannot invite someone to a role above your own');
+    }
+
     const existingUser = await usersRepository.findByEmail(email);
     if (existingUser) {
       const existingMembership = await membersRepository.findByUserAndOrganization(
@@ -108,6 +122,10 @@ export const invitationsService = {
     }
     if (invitation.expiresAt < new Date()) {
       throw new ConflictError('Invitation has expired');
+    }
+    // Invitations created before OWNER was refused may still be pending.
+    if (invitation.role === 'OWNER') {
+      throw new ConflictError('This invitation is no longer valid');
     }
     if (invitation.email !== userEmail) {
       throw new ForbiddenError('This invitation was sent to a different email address');

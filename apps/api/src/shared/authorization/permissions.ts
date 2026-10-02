@@ -206,3 +206,26 @@ export function canActOnResource(
 ): boolean {
   return roleHasPermission(role, anyPermission) || (isOwnResource && roleHasPermission(role, ownPermission));
 }
+
+const ROLE_RANK: Record<Role, number> = { OWNER: 3, ADMIN: 2, MEMBER: 1, VIEWER: 0 };
+
+/** True when `role` is strictly above `other` in the OWNER > ADMIN > MEMBER > VIEWER ordering. */
+export function isRoleAbove(role: Role, other: Role): boolean {
+  return ROLE_RANK[role] > ROLE_RANK[other];
+}
+
+/**
+ * Who may change the role of, or remove, a member holding `targetRole`: an
+ * OWNER anyone (the OWNER target itself is blocked separately by the members
+ * service), everyone else only members strictly below their own rank. This is
+ * ordering, not a permission, so it can't live in the matrix above -- the
+ * matrix says *whether* a role may manage members, this says *which* ones.
+ */
+export function canManageRole(actorRole: Role, targetRole: Role): boolean {
+  return actorRole === 'OWNER' || isRoleAbove(actorRole, targetRole);
+}
+
+/** The role a member may hand out (invitation, role change): never above their own, and never OWNER -- ownership only moves through transfer-ownership. */
+export function canGrantRole(actorRole: Role, grantedRole: Role): boolean {
+  return grantedRole !== 'OWNER' && !isRoleAbove(grantedRole, actorRole);
+}

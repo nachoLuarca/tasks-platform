@@ -14,6 +14,11 @@ const booleanFromString = (defaultValue: 'true' | 'false') =>
 export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN cannot be empty'),
+  // Number of reverse proxies in front of the API (Render adds one). 0 means
+  // `req.ip` is the socket peer and X-Forwarded-For is ignored; with N > 0 the
+  // Nth address from the right is trusted as the client. Setting it above the
+  // real number lets clients spoof their IP, so it defaults to off.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   BODY_LIMIT: z.string().min(1).default('1mb'),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 
@@ -33,6 +38,11 @@ export const envSchema = z.object({
   RATE_LIMIT_ENABLED: booleanFromString('true'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+
+  // --- Webhooks ---
+  // Lets a webhook point at http:// and at loopback/private addresses. Only for
+  // local development, where the receiver runs on localhost; never in production.
+  WEBHOOK_ALLOW_PRIVATE_URLS: booleanFromString('false'),
 
   // --- Account emails ---
   // Per-account ceiling on verification emails in any rolling hour, the

@@ -1,7 +1,8 @@
 import type { Role } from '@tasks-platform/contracts';
 
+import { canManageRole } from '../../shared/authorization/index.js';
 import { prisma, type DbClient } from '../../shared/db/index.js';
-import { ConflictError, NotFoundError } from '../../shared/errors/index.js';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js';
 import { membersRepository } from './members.repository.js';
 import type { MemberEntity, MembershipEntity } from './members.types.js';
 
@@ -15,6 +16,13 @@ async function requireMembershipByUser(
     throw new NotFoundError('Member not found');
   }
   return membership;
+}
+
+/** A non-OWNER may only manage members strictly below their own role: an ADMIN can't demote or expel another ADMIN. */
+function assertCanManage(actorRole: Role, targetRole: Role): void {
+  if (!canManageRole(actorRole, targetRole)) {
+    throw new ForbiddenError('You cannot manage a member whose role is equal to or above your own');
+  }
 }
 
 export const membersService = {
@@ -33,7 +41,12 @@ export const membersService = {
    * exactly one OWNER per organization -- a plain role update could
    * otherwise create a second one, or strand the organization without one.
    */
-  async updateRole(organizationId: string, targetUserId: string, newRole: Role): Promise<MembershipEntity> {
+  async updateRole(
+    organizationId: string,
+    actorRole: Role,
+    targetUserId: string,
+    newRole: Role,
+  ): Promise<MembershipEntity> {
     const target = await requireMembershipByUser(targetUserId, organizationId);
 
     if (target.role === 'OWNER') {
@@ -43,15 +56,18 @@ export const membersService = {
       throw new ConflictError('Use the transfer-ownership endpoint to change the organization owner');
     }
 
+    assertCanManage(actorRole, target.role);
+
     return membersRepository.updateRole(target.id, newRole);
   },
 
-  async remove(organizationId: string, targetUserId: string): Promise<void> {
+  async remove(organizationId: string, actorRole: Role, targetUserId: string): Promise<void> {
     const target = await requireMembershipByUser(targetUserId, organizationId);
 
     if (target.role === 'OWNER') {
       throw new ConflictError('The owner cannot be removed; transfer ownership first');
     }
+    assertCanManage(actorRole, target.role);
 
     await membersRepository.remove(target.id);
   },

@@ -48,6 +48,22 @@ describe('webhook delivery', () => {
     expect(deliveries[0]).toMatchObject({ attempt: 1, statusCode: 200, error: null });
   });
 
+  it('does not follow a redirect, so a public receiver cannot bounce the POST to an internal address', async () => {
+    const internal = await startTestReceiver(200);
+    try {
+      receiver.redirectTo(internal.url);
+      const { endpoint, event } = await createEndpointAndEvent(receiver.url);
+
+      const result = await deliverWebhookAttempt({ outboxEventId: event.id, webhookEndpointId: endpoint.id, attemptNumber: 1 });
+
+      expect(result.success).toBe(false);
+      expect(result.statusCode).toBe(302);
+      expect(internal.requests).toHaveLength(0);
+    } finally {
+      await internal.close();
+    }
+  });
+
   it('retries a failing endpoint and records every single attempt', async () => {
     receiver.setResponseStatus(500);
     const { endpoint, event } = await createEndpointAndEvent(receiver.url);

@@ -191,3 +191,41 @@ describe('webhooks: errors and permissions', () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe('webhook destination URL (SSRF)', () => {
+  const internalUrls = ['http://example.com/hooks', 'https://localhost/hooks', 'https://169.254.169.254/latest/meta-data'];
+
+  it('refuses to create a webhook that points at an internal or insecure address with 422', async () => {
+    const s = await setup();
+    for (const url of internalUrls) {
+      const response = await request(app)
+        .post(s.base)
+        .set('Authorization', `Bearer ${s.admin.accessToken}`)
+        .send({ url, eventTypes: ['TASK_CREATED'] });
+      expect(response.status).toBe(422);
+    }
+    expect(await prisma.webhookEndpoint.count({ where: { organizationId: s.organizationId } })).toBe(1);
+  });
+
+  it('refuses to repoint an existing webhook at an internal address, leaving its url untouched', async () => {
+    const s = await setup();
+    const response = await request(app)
+      .patch(`${s.base}/${s.webhookId}`)
+      .set('Authorization', `Bearer ${s.admin.accessToken}`)
+      .send({ url: 'https://127.0.0.1:6379/' });
+
+    expect(response.status).toBe(422);
+    const stored = await prisma.webhookEndpoint.findUnique({ where: { id: s.webhookId } });
+    expect(stored?.url).toBe('https://example.com/hooks');
+  });
+
+  it('still lets a PATCH that does not touch the url through', async () => {
+    const s = await setup();
+    const response = await request(app)
+      .patch(`${s.base}/${s.webhookId}`)
+      .set('Authorization', `Bearer ${s.admin.accessToken}`)
+      .send({ enabled: false });
+
+    expect(response.status).toBe(200);
+  });
+});

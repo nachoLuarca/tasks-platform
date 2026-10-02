@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 
 import type { CreateInvitationRequest } from '@tasks-platform/contracts';
 
-import { requireUserId } from '../../shared/authorization/index.js';
+import { requireUserActor, requireUserId } from '../../shared/authorization/index.js';
 import { UnauthorizedError } from '../../shared/errors/index.js';
 import { usersService } from '../users/users.service.js';
 import { toCreateInvitationResponse, toInvitationPreviewResponse, toInvitationResponse } from './invitations.mapper.js';
@@ -20,10 +20,16 @@ function getOrganizationId(req: { membership?: { organizationId: string } }): st
 export const invitationsController = {
   create: (async (req, res) => {
     const organizationId = getOrganizationId(req);
-    const invitedById = getAuthenticatedUserId(req);
+    const inviter = requireUserActor(req);
     const body = req.body as CreateInvitationRequest;
 
-    const invitation = await invitationsService.create(organizationId, invitedById, body.email, body.role);
+    const invitation = await invitationsService.create(
+      organizationId,
+      inviter.userId,
+      inviter.role,
+      body.email,
+      body.role,
+    );
 
     res.status(201).json(toCreateInvitationResponse(invitation));
   }) satisfies RequestHandler,

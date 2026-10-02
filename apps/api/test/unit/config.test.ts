@@ -39,4 +39,27 @@ describe('config', () => {
 
     expect(result.status).toBe(0);
   });
+
+  it('refuses a wildcard CORS_ORIGIN in production, where credentials are sent', () => {
+    const result = runWithEnv({ ...validEnv, NODE_ENV: 'production', CORS_ORIGIN: '*' });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('CORS_ORIGIN');
+  });
+
+  it('accepts an explicit CORS_ORIGIN list in production', () => {
+    const result = runWithEnv({
+      ...validEnv,
+      NODE_ENV: 'production',
+      CORS_ORIGIN: 'https://app.example.com, https://admin.example.com',
+    });
+
+    expect(result.status).toBe(0);
+  });
+
+  it('still allows a wildcard CORS_ORIGIN outside production', () => {
+    const result = runWithEnv({ ...validEnv, NODE_ENV: 'test', CORS_ORIGIN: '*' });
+
+    expect(result.status).toBe(0);
+  });
 });

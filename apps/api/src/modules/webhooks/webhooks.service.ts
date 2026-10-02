@@ -5,6 +5,7 @@ import { WEBHOOK_DELIVERY_JOB_OPTIONS, webhookDeliveryQueue } from '@tasks-platf
 import { prisma } from '../../shared/db/index.js';
 import { buildPage, decodeCursor, type Page } from '../../shared/pagination/index.js';
 import type { TaskActivityType } from '../activity/activity.types.js';
+import { assertWebhookUrlAllowed } from './webhook-url.js';
 import { webhooksRepository } from './webhooks.repository.js';
 import type { WebhookDeliveryEntity, WebhookEndpointEntity } from './webhooks.types.js';
 
@@ -14,6 +15,7 @@ function generateSecret(): string {
 
 export const webhooksService = {
   async create(organizationId: string, createdById: string, url: string, eventTypes: TaskActivityType[]): Promise<{ endpoint: WebhookEndpointEntity; secret: string }> {
+    assertWebhookUrlAllowed(url);
     const secret = generateSecret();
     const endpoint = await webhooksRepository.create({ organizationId, url, secret, eventTypes, createdById });
     return { endpoint, secret };
@@ -27,6 +29,9 @@ export const webhooksService = {
     endpoint: WebhookEndpointEntity,
     input: { url?: string; eventTypes?: TaskActivityType[]; enabled?: boolean },
   ): Promise<WebhookEndpointEntity> {
+    if (input.url !== undefined) {
+      assertWebhookUrlAllowed(input.url);
+    }
     return webhooksRepository.update(endpoint.id, input);
   },
 

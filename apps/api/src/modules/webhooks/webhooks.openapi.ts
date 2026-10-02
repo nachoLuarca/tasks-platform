@@ -14,6 +14,8 @@ import { emptyResponse, jsonResponse, registerOperation } from '../../shared/ope
 
 const BASE = '/v1/organizations/:organizationId/webhooks';
 const WEBHOOK_NOT_FOUND = 'La organizacion o el webhook no existen, o quien llama no es miembro.';
+const WEBHOOK_URL_NOT_PUBLIC =
+  'La url no es publica: debe ser https y no apuntar a localhost, una red privada, link-local ni un nombre interno (en desarrollo local se desactiva con `WEBHOOK_ALLOW_PRIVATE_URLS`).';
 
 export function registerWebhooksPaths(registry: OpenAPIRegistry): void {
   const WebhookEndpoint = webhookEndpointResponseSchema.openapi('WebhookEndpoint');
@@ -31,6 +33,7 @@ export function registerWebhooksPaths(registry: OpenAPIRegistry): void {
     usersOnly: true,
     body: createWebhookEndpointRequestSchema.openapi('CreateWebhookEndpointRequest'),
     responses: { 201: jsonResponse('Webhook creado, con su secreto.', WebhookEndpointWithSecret) },
+    errors: { 422: WEBHOOK_URL_NOT_PUBLIC },
   });
 
   registerOperation(registry, {
@@ -55,7 +58,7 @@ export function registerWebhooksPaths(registry: OpenAPIRegistry): void {
     permission: 'webhook:manage',
     body: updateWebhookEndpointRequestSchema.openapi('UpdateWebhookEndpointRequest'),
     responses: { 200: jsonResponse('Webhook actualizado.', WebhookEndpoint) },
-    errors: { 404: WEBHOOK_NOT_FOUND },
+    errors: { 404: WEBHOOK_NOT_FOUND, 422: WEBHOOK_URL_NOT_PUBLIC },
   });
 
   registerOperation(registry, {
