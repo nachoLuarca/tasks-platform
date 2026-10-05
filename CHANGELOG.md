@@ -6,6 +6,13 @@ mano. Las entradas de `v0.1.0` a `v0.7.0` se reconstruyeron una sola vez, a part
 cada fase y de los commits `feat` y `fix` que cada uno incluye, con el mismo formato que usa
 release-please.
 
+## [0.8.3](https://github.com/nachoLuarca/tasks-platform/compare/v0.8.2...v0.8.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* **api:** treat expired invitations as not pending ([#24](https://github.com/nachoLuarca/tasks-platform/issues/24)) ([376c504](https://github.com/nachoLuarca/tasks-platform/commit/376c5046e2fc7592adb018bdb7cac363c82bba7d))
+
 ## [0.8.2](https://github.com/nachoLuarca/tasks-platform/compare/v0.8.1...v0.8.2) (2026-10-02)
 
 
