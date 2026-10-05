@@ -48,7 +48,11 @@ export const invitationsService = {
 
     const pending = await invitationsRepository.findPendingByOrganizationAndEmail(organizationId, email);
     if (pending) {
-      throw new ConflictError('There is already a pending invitation for this email');
+      if (pending.expiresAt > new Date()) {
+        throw new ConflictError('There is already a pending invitation for this email');
+      }
+      // An expired invitation still occupies the partial unique index; retire it so a fresh one can be issued.
+      await invitationsRepository.revoke(pending.id);
     }
 
     const organization = await organizationsRepository.findById(organizationId);
