@@ -26,7 +26,7 @@ export function registerInvitationsPaths(registry: OpenAPIRegistry): void {
     body: createInvitationRequestSchema.openapi('CreateInvitationRequest'),
     responses: { 201: jsonResponse('Invitacion creada y correo encolado.', createInvitationResponseSchema.openapi('Invitation')) },
     errors: {
-      409: 'La persona ya es miembro, ya tiene una invitacion pendiente, o el rol pedido es `OWNER` (la propiedad solo se transfiere con `transfer-ownership`).',
+      409: 'La persona ya es miembro, ya tiene una invitacion pendiente vigente (una vencida se reemplaza), o el rol pedido es `OWNER` (la propiedad solo se transfiere con `transfer-ownership`).',
       422: 'La organizacion o quien invita ya no existen.',
       503: 'Redis no responde y el correo de la invitacion no se puede encolar.',
     },
@@ -38,6 +38,7 @@ export function registerInvitationsPaths(registry: OpenAPIRegistry): void {
     path: ORGANIZATION_BASE,
     tag: 'invitations',
     summary: 'Listar invitaciones pendientes',
+    description: 'Solo invitaciones vigentes: las vencidas no se incluyen.',
     auth: 'bearer',
     permission: 'invitation:list',
     responses: { 200: jsonResponse('Invitaciones pendientes.', invitationListResponseSchema) },

@@ -201,9 +201,8 @@ describe('invitations service errors', () => {
     expect((await request(app).get(`/v1/invitations/${expiredToken}`)).status).toBe(404);
     expect((await request(app).post(`/v1/invitations/${expiredToken}/accept`).set(auth(other))).status).toBe(409);
 
-    // accepted twice (the expired invitation still counts as pending, so revoke it first)
-    await request(app).delete(`${s.org}/invitations/${expired.body.id}`).set(auth(s.owner));
-    await invite(s, outsider.email, 'VIEWER');
+    // accepted twice (re-inviting over the expired invitation replaces it)
+    expect((await invite(s, outsider.email, 'VIEWER')).status).toBe(201);
     const token = await getInvitationToken(outsider.email);
     expect((await request(app).post(`/v1/invitations/${token}/accept`).set(auth(other))).status).toBe(204);
     expect((await request(app).post(`/v1/invitations/${token}/accept`).set(auth(other))).status).toBe(409);

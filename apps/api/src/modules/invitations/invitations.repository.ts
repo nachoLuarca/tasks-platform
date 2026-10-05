@@ -40,7 +40,7 @@ export const invitationsRepository = {
 
   async listPendingByOrganization(organizationId: string, client: DbClient = prisma): Promise<InvitationEntity[]> {
     const rows = await client.invitation.findMany({
-      where: { organizationId, ...PENDING_WHERE },
+      where: { organizationId, ...PENDING_WHERE, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toEntity);

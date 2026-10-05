@@ -182,6 +182,34 @@ describe('invitations', () => {
     expect(response.status).toBe(409);
   });
 
+  it('does not list expired invitations as pending', async () => {
+    const { accessToken, organizationId } = await registerAndGetSession(app, owner);
+    const created = await createInvitation(accessToken, organizationId, invitee.email);
+    await prisma.invitation.update({
+      where: { id: created.body.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const listResponse = await request(app)
+      .get(`/v1/organizations/${organizationId}/invitations`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body).toHaveLength(0);
+  });
+
+  it('lets an expired invitation be replaced by a new one for the same email', async () => {
+    const { accessToken, organizationId } = await registerAndGetSession(app, owner);
+    const created = await createInvitation(accessToken, organizationId, invitee.email);
+    await prisma.invitation.update({
+      where: { id: created.body.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const response = await createInvitation(accessToken, organizationId, invitee.email);
+    expect(response.status).toBe(201);
+    expect(response.body.id).not.toBe(created.body.id);
+  });
+
   it('returns 404 for invitation routes on an organization the caller does not belong to', async () => {
     const { organizationId } = await registerAndGetSession(app, owner);
     const outsiderSession = await registerAndGetSession(app, outsider);
