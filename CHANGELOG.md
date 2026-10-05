@@ -6,6 +6,13 @@ mano. Las entradas de `v0.1.0` a `v0.7.0` se reconstruyeron una sola vez, a part
 cada fase y de los commits `feat` y `fix` que cada uno incluye, con el mismo formato que usa
 release-please.
 
+## [0.8.2](https://github.com/nachoLuarca/tasks-platform/compare/v0.8.1...v0.8.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **api:** security audit fixes for high and medium findings ([#22](https://github.com/nachoLuarca/tasks-platform/issues/22)) ([dcbc245](https://github.com/nachoLuarca/tasks-platform/commit/dcbc2451de1ee2925bca9b95edec3c623925f245))
+
 ## [0.8.1](https://github.com/nachoLuarca/tasks-platform/compare/v0.8.0...v0.8.1) (2026-09-24)
 
 
