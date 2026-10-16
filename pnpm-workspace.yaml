@@ -19,3 +19,16 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
   prisma: true
+
+minimumReleaseAgeExclude:
+  - nodemailer@10.1.2
+
+overrides:
+  # @prisma/config (used only by the Prisma CLI) pins deepmerge-ts 7.x, which has
+  # a stack-exhaustion advisory fixed in 8.0.0. Prisma 6.19 is the last 6.x line.
+  deepmerge-ts: '^8.0.0'
+  # eslint/typescript-eslint pull minimatch versions whose brace-expansion has
+  # DoS advisories; the patched releases keep the same API.
+  brace-expansion@1: '^1.1.21'
+  brace-expansion@5: '^5.0.12'
+  fast-uri@3: '^3.1.8'
