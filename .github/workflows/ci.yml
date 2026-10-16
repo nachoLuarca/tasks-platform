@@ -61,6 +61,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Fails on any known advisory of high severity or worse in the lockfile,
+      # dev dependencies included: they run in CI and on developer machines.
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high
+
       - name: Apply database migrations
         run: pnpm --filter @tasks-platform/api run db:migrate:deploy
         env:
