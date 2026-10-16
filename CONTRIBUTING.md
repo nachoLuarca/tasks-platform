@@ -88,6 +88,7 @@ el PR de release habra que cerrarlo y reabrirlo a mano cada vez.
 ```bash
 pnpm lint
 pnpm typecheck
+pnpm audit --audit-level=high
 pnpm test          # con el stack levantado: Postgres, Redis y Mailpit
 pnpm --filter @tasks-platform/api run openapi:check
 ```
